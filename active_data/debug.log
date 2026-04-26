@@ -1,0 +1,68 @@
+{
+  "per_object_reject_counts": {
+    "no_room": 4,
+    "blacklist": 115,
+    "too_small_component": 53,
+    "too_small_volume": 25,
+    "invalid_bbox": 221,
+    "not_unique_in_room": 10
+  },
+  "per_object_reject_examples": {
+    "no_room": [
+      "window"
+    ],
+    "blacklist": [
+      "book",
+      "downlights",
+      "decorative painting",
+      "peach",
+      "fruit",
+      "curtain",
+      "other",
+      "carpet",
+      "trappings",
+      "chandelier"
+    ],
+    "too_small_component": [
+      "jar",
+      "ornament",
+      "towel",
+      "snacks",
+      "tuyere",
+      "dish",
+      "mirror",
+      "bookshelf",
+      "Clothes hanger",
+      "plant"
+    ],
+    "too_small_volume": [
+      "box",
+      "plant",
+      "flowers",
+      "ornament",
+      "Clothes hanger",
+      "bedside table",
+      "towel",
+      "vase",
+      "stool",
+      "faucet"
+    ],
+    "invalid_bbox": [
+      "wall",
+      "floor",
+      "ceiling",
+      "room"
+    ],
+    "not_unique_in_room": [
+      "chair",
+      "wall cabinet",
+      "bedside table",
+      "cupboard"
+    ]
+  },
+  "group_reject_counts": {},
+  "group_reject_examples": {},
+  "num_candidates": 41,
+  "num_filtered": 31,
+  "num_results": 31
+}
