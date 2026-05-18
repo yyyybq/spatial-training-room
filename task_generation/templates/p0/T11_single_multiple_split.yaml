@@ -1,0 +1,60 @@
+# T11 – Single / Multiple / Arrangement Disambiguation
+# Merged: T02 Single-vs-Compound, T12 Arrangement-Type, T28 Aggregate-Split-Count
+# "Is that one object or two? Are they side-by-side or stacked?"
+# From afar or obliquely, touching/overlapping objects look like one.
+
+template_id: T11
+name: single_multiple_split
+subclass: C1.4
+priority: P0
+description: >
+  Determine whether what appears to be a single object is actually two (or more)
+  separate objects, and optionally judge their spatial arrangement
+  (side-by-side, stacked, overlapping, touching).
+  The agent must approach closely enough and from a lateral angle so that
+  the gap between objects is visible in the image.
+
+question_templates:
+  - "Is that one {label} or are there two separate ones?"
+  - "How many {label_plural} are there?"
+  - "Are the {label_plural} side-by-side or is one on top of the other?"
+  - "Are those {label_plural} separate objects or is it one piece of furniture?"
+
+answer_type: categorical
+answer_choices_generator: count_and_arrangement
+
+gt_from: object_instance_count_and_arrangement
+
+trigger:
+  # At init_view, PairVisible fails OR SeparationOnImage < 0.03
+  # i.e., objects look merged from init position
+  min_true_instance_count: 2
+  max_init_separation_frac: 0.03    # objects appear merged at init
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: separation_view
+    region_generator: view_with_separation
+    region_args:
+      group: "{{group_ids}}"
+      target_separation_frac: 0.05   # aim for ≥ 5% image-width gap
+    predicates:
+      # Expanded per pair (obj_a, obj_b) in group at instantiation time
+      - {name: Visible,           args: {obj: "{{member_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: SeparationOnImage, args: {obj_a: "{{pair_a_id}}", obj_b: "{{pair_b_id}}", s_min_frac: 0.04}}
+      - {name: DistanceBand,      args: {obj: "{{group_centroid_proxy}}", d_min: 0.5, d_max: 2.5}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  objects_close_together: true    # AABB gap ≤ 0.3 m so they can appear merged
+
+action_config:
+  move_m: 0.30                   # finer step to navigate tight area around group
+  turn_deg: 30
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

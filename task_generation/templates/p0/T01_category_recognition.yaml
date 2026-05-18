@@ -1,0 +1,74 @@
+# T01 – Category Recognition
+# "Is that a piano or a cabinet?"
+# Requires an unambiguous, fully-exposed view of the target object.
+
+template_id: T01
+name: category_recognition
+subclass: C1.1
+priority: P0
+caveat: >
+  Identity recognition on AABB-only scenes is *signal-weak*: without
+  textures, the only category cue is rough size + aspect ratio. Use
+  weight ≤ 0.3 in any benchmark mix and prefer T18 (post-occlusion
+  category) when occluder geometry is available.
+weight: 0.3
+description: >
+  Identify the category/type of a specific object.
+  The initial view is too oblique, too far, or partially occluded.
+  The agent must move to a view where the object's aspect ratio is exposed
+  in at least two dimensions and the scale is appropriate.
+
+# ---------- Question templates ----------
+question_templates:
+  - "What type of object is that?"
+  - "Is that a {choice_a} or a {choice_b}?"
+  - "What is the large object in front of you?"
+
+answer_type: categorical          # MC from choices generated at instantiation time
+answer_choices_generator: similar_aabb_labels
+# Generates choices: correct label + 2-3 other labels from same bounding-box
+# size family (e.g., large furniture) present in scene or common distractor list.
+
+# ---------- GT source ----------
+gt_from: labels_json_label        # answer = target object's label field
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: identity_view
+    # Sampler places camera at various azimuths/distances around target
+    region_generator: around_object
+    region_args:
+      target: "{{target_id}}"
+      dist_min: 1.0
+      dist_max: 3.0
+      height_min: 1.0
+      height_max: 1.8
+    predicates:
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 4, max_occ: 0.40}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 1.0,  d_max: 3.0}}
+      - {name: AspectExposed, args: {obj: "{{target_id}}", min_ratio: 0.30}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 25}}
+      - {name: ScaleBand,     args: {obj: "{{target_id}}", s_min: 0.08, s_max: 0.60}}
+    threshold: 1.0                # all 5 predicates must pass
+
+coverage_aggregator: all          # single slot → all = trivial
+min_coverage_for_credit: 1.0
+
+# ---------- Scene requirements ----------
+scene_requirements:
+  min_objects: 1
+  # At init_view the target must fail at least one evidence predicate
+  # (guaranteed by generator: init_view sampled from q=0 region)
+
+# ---------- Action / scoring config ----------
+action_config:
+  move_m: 0.5
+  turn_deg: 45
+  look_deg: 15
+max_steps: 8
+gamma: 0.95                       # per-step discount
+
+# ---------- Anti-cheat notes ----------
+# - Only submit view q is evaluated (no accumulated frame credit)
+# - Coverage = 1 only when identity_view slot conditions all pass at submit time
+# - Answering without ever satisfying AspectExposed ≥ 0.30 → Coverage = 0 → score = 0

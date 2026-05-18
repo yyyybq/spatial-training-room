@@ -1,0 +1,58 @@
+# T13 – Post-occlusion Continuation
+# "Does the thing behind the wardrobe continue into the other side?"
+# Agent must look around the front object to see whether the back object
+# is one continuous piece or is actually separate.
+
+template_id: T13
+name: post_occlusion_continuation
+subclass: C1.4
+priority: P0
+description: >
+  Decide whether an object partially hidden behind another object is continuous
+  (the same piece extends to the other side) or is a separate second object.
+  The agent must move to a side angle where the back object is no longer
+  primarily occluded by the front object and both can be compared spatially.
+
+question_templates:
+  - "Is the {back_label} one continuous piece or are there two separate ones behind the {front_label}?"
+  - "Does the {back_label} extend through to the other side of the {front_label}?"
+  - "Is what you can see on both sides of the {front_label} the same {back_label} or two different ones?"
+
+answer_type: binary
+answer_choices_generator: binary_continuous_separate
+
+gt_from: back_object_continuity
+# GT: single AABB spanning both sides = continuous; two separate AABBs = separate
+
+trigger:
+  # At init_view, back object must be substantially occluded by front
+  min_init_occlusion_fraction: 0.50   # ≥ 50% of back obj's corners blocked
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: unoccluded_side_view
+    region_generator: behind_front_object
+    region_args:
+      front_obj: "{{front_id}}"
+      back_obj:  "{{back_id}}"
+      side_angle_min_deg: 30    # must be ≥ 30° off the init viewing axis
+    predicates:
+      - {name: Visible,           args: {obj: "{{front_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: Visible,           args: {obj: "{{back_id}}",  min_corners: 4, max_occ: 0.30}}
+      - {name: NotBlockedBy,      args: {obj: "{{back_id}}", blocker: "{{front_id}}"}}
+      - {name: SeparationOnImage, args: {obj_a: "{{front_id}}", obj_b: "{{back_id}}", s_min_frac: 0.04}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  back_object_substantially_occluded_at_init: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 8
+gamma: 0.95

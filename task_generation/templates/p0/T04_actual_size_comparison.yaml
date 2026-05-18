@@ -1,0 +1,67 @@
+# T04 – Actual Size Comparison
+# "Which object is actually larger, A or B?"
+# Near-far perspective makes one look bigger. Agent must equalise viewing distances.
+
+template_id: T04
+name: actual_size_comparison
+subclass: C1.2
+priority: P0
+description: >
+  Decide which of two objects is physically larger.
+  Init view places one object much closer than the other so perspective
+  makes the smaller object appear bigger. Agent must move to a position
+  where both are at comparable distances to judge true size.
+
+question_templates:
+  - "Which object is actually larger: the {obj_a_label} or the {obj_b_label}?"
+  - "Ignoring distance, which is the bigger object?"
+
+answer_type: categorical
+answer_choices_generator: pair_labels   # [obj_a_label, obj_b_label]
+
+gt_from: aabb_volume_comparison        # larger AABB volume = correct answer
+
+# ---------- Trigger condition at instantiation time ----------
+# Generator only emits a task if:
+#   true_volume_ratio = vol_larger / vol_smaller  ≥  2.0
+#   AND at init_view  apparent_size_ratio ∈ [0.7, 1.4]  (looks similar or wrong)
+
+trigger:
+  min_true_volume_ratio: 2.0
+  init_apparent_size_ratio_min: 0.7
+  init_apparent_size_ratio_max: 1.4
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: equidistant_pair_view
+    region_generator: equidistant_to_pair
+    region_args:
+      obj_a: "{{obj_a_id}}"
+      obj_b: "{{obj_b_id}}"
+      dist_min: 0.8
+      dist_max: 4.0
+      # region_generator enforces |log(d_a/d_b)| ≤ 0.5 during sampling
+      max_log_dist_ratio: 0.5
+    predicates:
+      - {name: PairVisible,   args: {obj_a: "{{obj_a_id}}", obj_b: "{{obj_b_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: AspectExposed, args: {obj: "{{obj_a_id}}", min_ratio: 0.25}}
+      - {name: AspectExposed, args: {obj: "{{obj_b_id}}", min_ratio: 0.25}}
+      - {name: DistanceBand,  args: {obj: "{{obj_a_id}}", d_min: 0.8, d_max: 4.0}}
+      - {name: DistanceBand,  args: {obj: "{{obj_b_id}}", d_min: 0.8, d_max: 4.0}}
+      # Tier-2 override: also checks |log(d_a/d_b)| ≤ 0.5 at scoring time
+    threshold: 1.0
+    tier2_override: distance_balance_check
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  needs_pair_with_volume_ratio: 2.0
+
+action_config:
+  move_m: 0.5
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

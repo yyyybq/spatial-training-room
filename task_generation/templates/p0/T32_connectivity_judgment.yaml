@@ -1,0 +1,59 @@
+# T32 – Connectivity Judgment
+# "Can you get from the study to the kitchen without passing through the bedroom?"
+# Agent must physically traverse the candidate path and confirm or deny passage.
+
+template_id: T32
+name: connectivity_judgment
+subclass: C2.7
+priority: P0
+description: >
+  Determine whether a navigable path exists between two rooms (or zones) that
+  satisfies a constraint (e.g., avoids a specific intermediate room, uses a
+  specific portal, stays on one floor). The agent must walk (part of) the
+  path to inspect intermediate portals.
+  Each portal on the candidate path is one evidence slot.
+
+question_templates:
+  - "Can you get from the {start_room} to the {end_room} without passing through the {excluded_room}?"
+  - "Is there a direct connection between the {start_room} and the {end_room}?"
+  - "Which rooms do you pass through to get from {start_room} to {end_room}?"
+
+answer_type: binary
+answer_choices_generator: binary_yes_no
+
+gt_from: room_connectivity_graph
+# GT derived from structure.json room adjacency graph with portal positions
+
+trigger:
+  # Task only generated when the answer is non-trivially inferable from init position
+  min_rooms: 3
+  path_portals_not_all_visible_at_init: true
+
+# ---------- Evidence slot PATTERN (one per portal on candidate path) ----------
+evidence_slot_pattern:
+  slot_id: "portal_{i}_facing"
+  region_generator: near_portal_facing
+  region_args:
+    portal: "{{portal_{i}_id}}"
+    dist_min: 0.3
+    dist_max: 2.0
+  predicates:
+    - {name: BearingWithin,     args: {obj: "{{portal_{i}_proxy_id}}", theta_deg: 30}}
+    - {name: DistanceBand,      args: {obj: "{{portal_{i}_proxy_id}}", d_min: 0.3, d_max: 2.0}}
+    - {name: OrthogonalToPlane, args: {plane: "{{portal_{i}_plane}}", theta_max_deg: 30}}
+  threshold: 1.0
+
+# Allow 80% slot coverage for longer paths (e.g., 4-portal paths)
+coverage_aggregator: mean
+min_coverage_for_credit: 0.80
+
+scene_requirements:
+  min_rooms: 3
+  rooms_connected_by_portal: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 20
+gamma: 0.95

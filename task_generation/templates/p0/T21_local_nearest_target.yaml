@@ -1,0 +1,61 @@
+# T21 – Local Nearest Target
+# "Which of A or B is closer to the door?"
+# Agent needs to observe both objects from a position that allows
+# a reliable distance-to-reference comparison.
+
+template_id: T21
+name: local_nearest_target
+subclass: C2.3
+priority: P0
+description: >
+  Identify which of two candidate objects is nearest to a reference landmark
+  (door, pillar, wall, another object) in the same room.
+  The correct answer is ground-truth tagged; the challenge is that from the
+  initial position the relative distances are ambiguous due to oblique viewing
+  angle or both objects being outside clear view.
+
+question_templates:
+  - "Which is closer to the {reference_label}: the {obj_a_label} or the {obj_b_label}?"
+  - "Which {label} is nearest to the {reference_label}?"
+  - "Of the two {label_plural}, which is nearest to the {reference_label}?"
+
+answer_type: categorical
+answer_choices_generator: pair_labels
+
+gt_from: nearest_to_reference_by_aabb_center
+
+trigger:
+  # Distance difference must be detectable visually
+  min_dist_difference_m: 0.4
+  # At init: the relative ordering is ambiguous (oblique view or one/both not visible)
+  init_ordering_ambiguous: true
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: comparison_view
+    region_generator: view_of_triple
+    region_args:
+      obj_a: "{{obj_a_id}}"
+      obj_b: "{{obj_b_id}}"
+      reference: "{{reference_id}}"
+      dist_min: 0.8
+      dist_max: 5.0
+    predicates:
+      - {name: PairVisible, args: {obj_a: "{{obj_a_id}}", obj_b: "{{obj_b_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: Visible,     args: {obj: "{{reference_id}}", min_corners: 2, max_occ: 0.50}}
+      - {name: Centered,    args: {obj: "{{group_centroid_proxy}}", theta_deg: 40}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 3    # two candidates + one reference
+  same_room: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

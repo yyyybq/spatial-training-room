@@ -1,0 +1,69 @@
+# T05 – Actual Distance Comparison
+# "Is A closer to B or to C?"
+# Requires seeing A+B pair AND A+C pair to compare both relations.
+
+template_id: T05
+name: actual_distance_comparison
+subclass: C1.2
+priority: P0
+description: >
+  Decide which reference object (B or C) is closer to the subject A.
+  Since B and C may not both fit in a single frame, the agent must visit
+  two evidence positions: one showing A+B, one showing A+C.
+  Only after both pairs are observed can the distances be confidently compared.
+
+question_templates:
+  - "Is the {subject_label} closer to the {ref_b_label} or to the {ref_c_label}?"
+  - "Which is nearer to the {subject_label}: the {ref_b_label} or the {ref_c_label}?"
+
+answer_type: categorical
+answer_choices_generator: pair_from_triple   # [ref_b_label, ref_c_label]
+
+gt_from: aabb_center_distance_comparison
+# GT = label of the reference object whose AABB center is closer to subject's center
+
+trigger:
+  # Distance difference must be noticeable, not too ambiguous
+  min_dist_ratio: 1.3    # closer_dist * 1.3 ≤ farther_dist
+  # At init_view neither pair should be simultaneously clearly visible
+  max_both_pairs_visible_at_init: false
+
+# ---------- Evidence slots (DUAL) ----------
+evidence_slots:
+  - slot_id: AB_view
+    region_generator: around_pair
+    region_args:
+      obj_a: "{{subject_id}}"
+      obj_b: "{{ref_b_id}}"
+      dist_min: 0.8
+      dist_max: 4.0
+    predicates:
+      - {name: PairVisible, args: {obj_a: "{{subject_id}}", obj_b: "{{ref_b_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: Centered,    args: {obj: "{{subject_id}}", theta_deg: 40}}
+    threshold: 1.0
+
+  - slot_id: AC_view
+    region_generator: around_pair
+    region_args:
+      obj_a: "{{subject_id}}"
+      obj_b: "{{ref_c_id}}"
+      dist_min: 0.8
+      dist_max: 4.0
+    predicates:
+      - {name: PairVisible, args: {obj_a: "{{subject_id}}", obj_b: "{{ref_c_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: Centered,    args: {obj: "{{subject_id}}", theta_deg: 40}}
+    threshold: 1.0
+
+# Both slots must be covered before answer is credited
+coverage_aggregator: mean
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 3
+
+action_config:
+  move_m: 0.5
+  turn_deg: 45
+  look_deg: 15
+max_steps: 12
+gamma: 0.95

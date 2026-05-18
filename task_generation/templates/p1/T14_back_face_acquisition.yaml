@@ -1,0 +1,67 @@
+# T14 – Back-face Acquisition
+# "What is written on the back of the sign?" / "What does the back of the monitor look like?"
+# C2.1: Self-occlusion. P1 because it requires FRONT_NORMAL annotation on object.
+
+template_id: T14
+name: back_face_acquisition
+subclass: C2.1
+priority: P1
+description: >
+  Observe the back face of an object that is initially presented front-facing.
+  The object's front face is visible at init; the back face is self-occluded.
+  Agent must navigate completely around the object to view the rear face.
+  Requires objects annotated with a front_normal vector in labels.json.
+
+p1_requirement: >
+  Needs objects annotated with front_normal in labels.json.
+  Only scenes/objects with this annotation can instantiate this template.
+  front_normal is the unit vector pointing from object centre toward
+  the "canonical front" face (the face that typically faces the observer).
+
+question_templates:
+  - "What is on the back side of the {target_label}?"
+  - "Describe what you see on the rear face of the {target_label}."
+  - "Is there anything attached to the back of the {target_label}?"
+
+answer_type: categorical
+answer_choices_generator: back_face_property_choices
+
+gt_from: back_face_annotation
+# GT stored in labels.json back_face_description or back_face_label field
+
+trigger:
+  # At init_view: camera is on the front side (cos(angle, front_normal) > 0.5)
+  # i.e., viewing angle from front normal ≤ 60°
+  max_init_back_angle_deg: 60     # init must be front-facing
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: back_face_view
+    region_generator: behind_object_face
+    region_args:
+      target: "{{target_id}}"
+      face: back
+      # SideView enforces camera is in the rear hemisphere
+      side_theta_deg: 45         # within ±45° of back normal
+      dist_min: 0.5
+      dist_max: 2.5
+    predicates:
+      - {name: SideView,      args: {obj: "{{target_id}}", side: back, theta_deg: 45}}
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 4, max_occ: 0.20}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.5, d_max: 2.5}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 30}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 1
+  objects_require_annotation: [front_normal]
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

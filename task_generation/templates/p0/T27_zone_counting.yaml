@@ -1,0 +1,65 @@
+# T27 – Zone Counting  (merged T28 multi-room counting)
+# "How many sofas are in the living room and how many are in the dining room?"
+# Agent must enter each zone and count, cannot infer cross-zone totals from one spot.
+
+template_id: T27
+name: zone_counting
+subclass: C2.5
+priority: P0
+description: >
+  Count target objects in two or more spatially separated zones (rooms, alcoves,
+  or labelled floor regions). The agent must physically enter each zone to perform
+  a reliable count. Cross-zone totals cannot be inferred from a single vantage point.
+
+question_templates:
+  - "How many {target_label_plural} are in the {zone_a_name} in total?"
+  - "Count the {target_label_plural} across the {zone_a_name} and the {zone_b_name}."
+
+answer_type: ordinal              # integer count, or categorical (zone_a / zone_b / equal)
+answer_choices_generator: count_range_or_zone_comparison
+
+gt_from: per_zone_instance_count
+
+trigger:
+  min_zones: 2
+  # Each zone must be spatially separated enough that inter-zone visibility is blocked
+  zones_mutually_non_visible: true
+  # At init at least one zone is not scannable from starting position
+  min_zones_invisible_at_init: 1
+
+# ---------- Evidence slots (one per zone) ----------
+evidence_slots:
+  - slot_id: zone_a_scan
+    region_generator: inside_room
+    region_args:
+      room: "{{zone_a_id}}"
+    predicates:
+      - {name: InRoom, args: {room: "{{zone_a_id}}"}}
+    threshold: 1.0
+    tier2_override: zone_count_check
+    # Tier-2: verifies that from this position, all target instances in zone_a
+    # are visible (Visible with min_corners=4, max_occ=0.40) at least once
+    # during the trajectory up to this slot visit.
+
+  - slot_id: zone_b_scan
+    region_generator: inside_room
+    region_args:
+      room: "{{zone_b_id}}"
+    predicates:
+      - {name: InRoom, args: {room: "{{zone_b_id}}"}}
+    threshold: 1.0
+    tier2_override: zone_count_check
+
+coverage_aggregator: mean
+min_coverage_for_credit: 1.0    # both zones must be visited
+
+scene_requirements:
+  min_rooms: 2
+  rooms_connected_by_portal: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 18
+gamma: 0.95

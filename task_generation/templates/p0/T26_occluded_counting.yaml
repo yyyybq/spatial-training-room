@@ -1,0 +1,59 @@
+# T26 – Occluded Counting
+# "How many chairs are around the table, including hidden ones?"
+# Some chairs are behind/under the table; agent must orbit the table to count all.
+
+template_id: T26
+name: occluded_counting
+subclass: C2.5
+priority: P0
+description: >
+  Count the total number of instances of a target category in a local cluster,
+  where some instances are obscured by a central occluder (e.g., chairs around
+  a table, boxes behind a shelf). Agent must move to reveal hidden instances.
+  The total count includes instances that are initially out of view.
+
+question_templates:
+  - "How many {target_label_plural} are there in total around the {occluder_label}?"
+  - "Count all the {target_label_plural}, including any that are hidden by the {occluder_label}."
+  - "How many {target_label_plural} surround the {occluder_label}?"
+
+answer_type: ordinal          # integer count 1–8
+answer_choices_generator: count_range
+
+gt_from: instance_count_in_region
+
+trigger:
+  # At init: at least one instance is occluded
+  min_init_occluded_count: 1
+  # Total count is non-trivial: at least 2
+  min_total_count: 2
+
+# ---------- Evidence slots ----------
+# One slot per hidden instance (expanded at instantiation)
+# The exposed instances at init don't need evidence slots (already visible)
+evidence_slot_pattern:
+  slot_id: "hidden_instance_{i}"
+  region_generator: around_occluder_to_expose
+  region_args:
+    occluder: "{{occluder_id}}"
+    target: "{{hidden_instance_{i}_id}}"
+    dist_min: 0.5
+    dist_max: 3.0
+  predicates:
+    - {name: Visible,    args: {obj: "{{hidden_instance_{i}_id}}", min_corners: 4, max_occ: 0.30}}
+    - {name: NotBlockedBy, args: {obj: "{{hidden_instance_{i}_id}}", blocker: "{{occluder_id}}"}}
+  threshold: 1.0
+
+coverage_aggregator: mean
+min_coverage_for_credit: 1.0    # must see ALL hidden instances
+
+scene_requirements:
+  min_objects: 3                # at least 2 target instances + 1 occluder
+  has_cluster_with_occluder: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 14
+gamma: 0.95

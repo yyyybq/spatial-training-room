@@ -3,6 +3,21 @@ Core data types and structures for the unified data factory.
 Supports both QA tasks and Action-Perception Loop tasks.
 """
 
+from .data_types import ViewState, QATaskItem, APLPassiveTaskItem, APLActiveTaskItem, make_task_id
+from .scene_context import SceneContext
+from .task_base import BaseTaskGenerator, TaskGeneratorFactory
+
+__all__ = [
+    "ViewState",
+    "QATaskItem",
+    "APLPassiveTaskItem",
+    "APLActiveTaskItem",
+    "make_task_id",
+    "SceneContext",
+    "BaseTaskGenerator",
+    "TaskGeneratorFactory",
+]
+
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from enum import Enum

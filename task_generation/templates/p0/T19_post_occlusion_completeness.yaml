@@ -1,0 +1,61 @@
+# T19 – Post-occlusion Completeness
+# "Is the hidden bookshelf intact or is part of it missing?"
+# Requires seeing the full extent of the hidden object — strictest occlusion template.
+
+template_id: T19
+name: post_occlusion_completeness
+subclass: C2.2
+priority: P0
+description: >
+  Judge whether a hidden object is complete (all parts present) or damaged /
+  partially absent. This demands seeing the object's full spatial extent,
+  requiring the strictest visibility: ≥ 8 AABB corners visible and very low
+  occlusion (< 10%). The agent must find a position where the object is fully
+  exposed without the occluder blocking any significant portion.
+
+question_templates:
+  - "Is the {target_label} behind the {occluder_label} complete or is part of it missing?"
+  - "Does the {target_label} hidden by the {occluder_label} appear intact?"
+  - "Is the hidden {target_label} whole, or is something broken/missing?"
+
+answer_type: binary
+answer_choices_generator: binary_complete_incomplete
+
+gt_from: object_completeness_flag
+# GT: object has completeness flag set in metadata (manually tagged or synthetic damage)
+
+trigger:
+  target_invisible_at_init: true
+  min_target_occlusion_at_init: 0.70
+
+# ---------- Evidence slots ----------
+# Strictest visibility requirements: 8 corners, max 10% occlusion
+evidence_slots:
+  - slot_id: full_extent_view
+    region_generator: around_occluder_back
+    region_args:
+      occluder: "{{occluder_id}}"
+      target: "{{target_id}}"
+      dist_min: 0.8
+      dist_max: 3.5
+    predicates:
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 8,  max_occ: 0.10}}
+      - {name: NotBlockedBy,  args: {obj: "{{target_id}}", blocker: "{{occluder_id}}"}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.8, d_max: 3.5}}
+      - {name: ScaleBand,     args: {obj: "{{target_id}}", s_min: 0.06, s_max: 0.70}}
+      - {name: AspectExposed, args: {obj: "{{target_id}}", min_ratio: 0.25}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  target_has_completeness_annotation: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

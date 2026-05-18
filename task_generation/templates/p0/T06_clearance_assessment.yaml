@@ -1,0 +1,69 @@
+# T06 – Minimum Clearance Assessment  (merged T07 Clearance Estimation)
+# "Can object X fit through the gap between A and B?"
+# Multiple bottlenecks along path → one evidence slot per bottleneck.
+
+template_id: T06
+name: clearance_assessment
+subclass: C1.2
+priority: P0
+description: >
+  Assess whether a target object (e.g., a sofa, wardrobe) can pass through
+  one or more bottlenecks (gaps, doorways, tight passages) along a path.
+  T06 variant: binary can_pass (yes/no).
+  T06b variant (same template, answer_type=ordinal): estimate the clearance margin
+  as tight / marginal / comfortable / wide.
+  Each bottleneck is one evidence slot; agent must approach each orthogonally
+  to measure the true opening width.
+
+question_templates:
+  - "Can the {target_label} pass through the gap between {left_label} and {right_label}?"
+  - "Will the {target_label} fit through that narrow passage?"
+  - "How much clearance does the {target_label} have at the narrowest point?"
+
+answer_type: binary                 # yes/no; set to ordinal for T06b variant
+answer_choices_generator: binary_yes_no
+
+gt_from: geometric_clearance
+# GT = (min_gap_width - target_max_dimension) > 0.0  →  yes, else no
+
+trigger:
+  # Clearance must be somewhat non-obvious: margin in [−0.3 m, +0.5 m]
+  min_clearance_margin_m: -0.30     # task only generated when can_pass is close call
+  max_clearance_margin_m:  0.50
+  # At init_view must NOT be directly facing bottleneck orthogonally
+  # (ensured by generator placing init at far/oblique position)
+
+# ---------- Evidence slot PATTERN (instantiated K times, one per bottleneck) ----------
+# The generator expands this pattern into slot_0, slot_1, … slot_{K-1}
+evidence_slot_pattern:
+  slot_id: "bottleneck_{i}"
+  region_generator: orthogonal_to_portal
+  region_args:
+    portal: "{{bottleneck_{i}_id}}"
+    dist_min: 0.4
+    dist_max: 1.5
+    ortho_max_deg: 15          # camera must face near-perpendicular to gap plane
+  predicates:
+    - {name: Visible,           args: {obj: "{{bottleneck_{i}_left_id}}",  min_corners: 4, max_occ: 0.30}}
+    - {name: Visible,           args: {obj: "{{bottleneck_{i}_right_id}}", min_corners: 4, max_occ: 0.30}}
+    - {name: DistanceBand,      args: {obj: "{{bottleneck_{i}_id}}",       d_min: 0.4, d_max: 1.5}}
+    - {name: OrthogonalToPlane, args: {plane: "{{bottleneck_{i}_plane}}", theta_max_deg: 15}}
+    - {name: SeparationOnImage, args: {obj_a: "{{bottleneck_{i}_left_id}}", obj_b: "{{bottleneck_{i}_right_id}}", s_min_frac: 0.15}}
+  threshold: 1.0
+
+# Score credit given even if agent visits only 80% of bottleneck slots
+# (single-bottleneck tasks: min_coverage_for_credit = 1.0)
+coverage_aggregator: mean
+min_coverage_for_credit: 0.80
+
+scene_requirements:
+  min_bottlenecks: 1
+  requires_target_object: true       # a moveable object with known bounding box
+
+# Finer grid for this task (bottleneck width can be sub-0.5 m)
+action_config:
+  move_m: 0.30
+  turn_deg: 15
+  look_deg: 15
+max_steps: 20
+gamma: 0.95

@@ -1,0 +1,59 @@
+# T24 – Portal Direction
+# "Which direction is the kitchen from here?"
+# Agent must move to find and identify the doorway connecting to the target room.
+
+template_id: T24
+name: portal_direction
+subclass: C2.4
+priority: P0
+description: >
+  Determine in which direction (left / right / ahead / behind, or a cardinal
+  direction relative to landmarks) the doorway to a specific target room lies.
+  The agent starts in room A with the portal out of view or at an ambiguous
+  bearing; it must move to see the portal and identify its direction.
+
+question_templates:
+  - "In which direction is the {room_b_name} from here?"
+  - "Where is the doorway leading to the {room_b_name}?"
+  - "Which way do you need to go to reach the {room_b_name}?"
+
+answer_type: categorical
+answer_choices_generator: directional_choices   # left/right/ahead/behind  or N/S/E/W
+
+gt_from: portal_bearing_from_init
+
+trigger:
+  # Portal must be outside init FOV or at ambiguous bearing
+  portal_invisible_at_init: true
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: portal_in_view
+    region_generator: near_portal_in_room_a
+    region_args:
+      portal: "{{portal_id}}"
+      room_a: "{{room_a_id}}"
+      dist_min: 0.5
+      dist_max: 3.0
+    predicates:
+      - {name: InRoom,            args: {room: "{{room_a_id}}"}}
+      - {name: BearingWithin,     args: {obj: "{{portal_proxy_id}}", theta_deg: 30}}
+      - {name: DistanceBand,      args: {obj: "{{portal_proxy_id}}", d_min: 0.5, d_max: 3.0}}
+      - {name: OrthogonalToPlane, args: {plane: "{{portal_plane}}", theta_max_deg: 30}}
+        # Camera faces somewhat toward portal (not parallel to wall)
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_rooms: 2
+  rooms_connected_by_portal: true
+  portal_invisible_from_init_position: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

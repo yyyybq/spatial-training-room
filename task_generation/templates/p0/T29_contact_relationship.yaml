@@ -1,0 +1,62 @@
+# T29 – Contact / Proximity Relationship
+# "Is the lamp resting on the table or is it on the floor beside the table?"
+# From front-on view the lamp's base and the table surface are at the same
+# image height; a lateral view reveals the vertical relationship.
+
+template_id: T29
+name: contact_relationship
+subclass: C2.6
+priority: P0
+description: >
+  Determine the contact or proximity relationship between two objects:
+  touching / resting_on / hanging_from / beside / stacked_above.
+  Front-on viewing creates depth ambiguity (nearer object looks co-planar).
+  A lateral view orthogonal to the A→B vector disambiguates.
+
+question_templates:
+  - "Is the {obj_a_label} resting on top of the {obj_b_label} or placed beside it?"
+  - "Is the {obj_a_label} touching the {obj_b_label}?"
+  - "What is the spatial relationship between the {obj_a_label} and the {obj_b_label}?"
+
+answer_type: categorical
+answer_choices_generator: contact_relations   # touching / resting_on / beside / above
+
+gt_from: contact_relationship_from_aabb
+# GT derived from AABB overlap and vertical alignment
+
+trigger:
+  # At init_view: viewing angle is within 20° of the A→B axis (depth ambiguity)
+  max_init_lateral_angle_deg: 20
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: lateral_view
+    region_generator: orthogonal_to_segment
+    region_args:
+      obj_a: "{{obj_a_id}}"
+      obj_b: "{{obj_b_id}}"
+      # Place camera ≥ 60° off the A-B axis (lateral view)
+      min_lateral_angle_deg: 60
+      dist_min: 0.5
+      dist_max: 3.0
+    predicates:
+      - {name: PairVisible,       args: {obj_a: "{{obj_a_id}}", obj_b: "{{obj_b_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: OrthogonalToPlane, args: {plane: "{{ab_vertical_plane}}", theta_max_deg: 30}}
+        # ab_vertical_plane: vertical plane containing the A-B center line
+      - {name: DistanceBand,      args: {obj: "{{midpoint_proxy}}", d_min: 0.5, d_max: 3.0}}
+      - {name: SeparationOnImage, args: {obj_a: "{{obj_a_id}}", obj_b: "{{obj_b_id}}", s_min_frac: 0.04}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  objects_in_contact_or_proximate: true    # AABB gap ≤ 0.15 m
+
+action_config:
+  move_m: 0.50
+  turn_deg: 30        # finer yaw for lateral alignment
+  look_deg: 15
+max_steps: 8
+gamma: 0.95

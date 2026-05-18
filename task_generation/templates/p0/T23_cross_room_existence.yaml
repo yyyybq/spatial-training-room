@@ -1,0 +1,57 @@
+# T23 – Cross-room Existence
+# "Is there a plant in the bedroom?"
+# Agent starts in room A; must enter room B and visually confirm presence/absence.
+
+template_id: T23
+name: cross_room_existence
+subclass: C2.4
+priority: P0
+description: >
+  Determine whether a specific type of object exists in a room different from
+  the starting room. The agent must navigate through doorways into the target room
+  and scan for the object. Cannot be inferred from room A.
+
+question_templates:
+  - "Is there a {target_label} in the {room_b_name}?"
+  - "Can you check if the {room_b_name} has a {target_label}?"
+  - "Does the {room_b_name} contain any {target_label_plural}?"
+
+answer_type: binary
+answer_choices_generator: binary_yes_no
+
+gt_from: object_exists_in_room_b
+
+trigger:
+  # Agent starts in room A; target room B is not visible from room A
+  rooms_count_min: 2
+  target_invisible_from_room_a: true
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: room_b_scan
+    region_generator: inside_room
+    region_args:
+      room: "{{room_b_id}}"
+      dist_from_centroid_max: 5.0
+    predicates:
+      - {name: InRoom, args: {room: "{{room_b_id}}"}}
+      # For GT=yes: also requires target visible
+      # For GT=no:  requires being in room B (so "absence" can be confirmed)
+    threshold: 1.0
+    tier2_override: cross_room_existence_check
+    # Tier-2 (GT=yes): additionally checks Visible(target, min_corners=4, max_occ=0.40)
+    # Tier-2 (GT=no):  confirms InRoom(B) + at least one full-room scan turn (look_deg×360/look_deg steps)
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_rooms: 2
+  rooms_connected_by_portal: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 14
+gamma: 0.95

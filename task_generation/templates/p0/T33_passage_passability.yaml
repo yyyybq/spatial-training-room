@@ -1,0 +1,60 @@
+# T33 – Passage Passability
+# "Can a person in a wheelchair pass through the corridor between rooms A and B?"
+# Like T06 (clearance) but no specific target object — judge the corridor/portal itself.
+
+template_id: T33
+name: passage_passability
+subclass: C2.7
+priority: P0
+description: >
+  Determine whether a specific passage (corridor, doorway, narrow gap between
+  walls or furniture) is wide enough for a given agent type or reference object
+  to pass through. Unlike T06, there is no moveable target object — the question
+  is purely about the passage geometry.
+
+question_templates:
+  - "Is the passage between {side_a_label} and {side_b_label} wide enough for a {agent_type}?"
+  - "Can a {agent_type} fit through the doorway to the {room_b_name}?"
+  - "Is the corridor wide enough for two people to pass each other?"
+
+answer_type: binary
+answer_choices_generator: binary_yes_no
+
+gt_from: passage_width_vs_threshold
+# GT: measured passage clear width vs. reference width (agent_type dimensions from config)
+
+trigger:
+  # Passage width must be within ambiguous range relative to reference
+  min_passage_width_m:  0.50    # always generate tasks for width ≥ 0.5 m
+  max_passage_width_m:  2.00    # don't generate for very wide passages (trivially passable)
+  # At init: cannot clearly see the passage width orthogonally
+  passage_not_orthogonally_visible_at_init: true
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: orthogonal_passage_view
+    region_generator: orthogonal_to_portal
+    region_args:
+      portal: "{{passage_id}}"
+      dist_min: 0.3
+      dist_max: 2.0
+      ortho_max_deg: 15
+    predicates:
+      - {name: DistanceBand,      args: {obj: "{{passage_proxy_id}}", d_min: 0.3, d_max: 2.0}}
+      - {name: OrthogonalToPlane, args: {plane: "{{passage_plane}}", theta_max_deg: 15}}
+      - {name: SeparationOnImage, args: {obj_a: "{{left_wall_proxy}}", obj_b: "{{right_wall_proxy}}", s_min_frac: 0.10}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  has_passage_with_measurable_width: true
+
+# Finer grid — need precise orthogonal positioning
+action_config:
+  move_m: 0.30
+  turn_deg: 15
+  look_deg: 15
+max_steps: 14
+gamma: 0.95

@@ -38,9 +38,19 @@ class SceneContext:
         self._load_scene_data()
     
     def _load_scene_data(self):
-        """Load scene labels, room polygons, etc."""
-        # Implementation will use existing utilities from utils/occlusion.py
-        pass
+        """Load scene labels, room polygons, etc. using SceneContext."""
+        # Lazy import to avoid circular deps
+        from .scene_context import SceneContext as _SC
+        ctx = _SC.load(self.scene_path)
+        self.labels = [
+            {"id": o.id, "label": o.label, "bmin": o.bmin.tolist(), "bmax": o.bmax.tolist()}
+            for o in ctx.objects
+        ]
+        self.room_polygons = ctx.room_polygons
+        self.occupancy_bounds = (ctx.floor_z, ctx.ceiling_z)
+        self.aabbs = ctx.objects
+        self.wall_aabbs = ctx.wall_aabbs
+        self.valid_spawn_regions = ctx.room_polygons
     
     @property
     def num_objects(self) -> int:

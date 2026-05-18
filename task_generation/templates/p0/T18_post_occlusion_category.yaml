@@ -1,0 +1,59 @@
+# T18 – Post-occlusion Category
+# "What type of object is hiding behind the wardrobe?"
+# Harder than T17: not just existence but identification of the hidden object.
+
+template_id: T18
+name: post_occlusion_category
+subclass: C2.2
+priority: P0
+description: >
+  Identify the category of an object that is currently hidden behind an occluder.
+  The agent must manoeuvre to expose the object sufficiently to distinguish
+  its type. Requires a good aspect view with low occlusion — stricter than T17.
+
+question_templates:
+  - "What type of object is behind the {occluder_label}?"
+  - "The object hidden by the {occluder_label}: is it a {choice_a} or a {choice_b}?"
+  - "Can you identify what is hidden behind the {occluder_label}?"
+
+answer_type: categorical
+answer_choices_generator: similar_aabb_labels   # same as T01
+
+gt_from: labels_json_label   # label of the hidden target object
+
+trigger:
+  target_invisible_at_init: true
+  min_target_occlusion_at_init: 0.70
+
+# ---------- Evidence slots ----------
+# Stricter than T17: need clear aspect + scale to identify category
+evidence_slots:
+  - slot_id: identification_view
+    region_generator: around_occluder_back
+    region_args:
+      occluder: "{{occluder_id}}"
+      target: "{{target_id}}"
+      dist_min: 0.8
+      dist_max: 3.0
+    predicates:
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 6,  max_occ: 0.20}}
+      - {name: NotBlockedBy,  args: {obj: "{{target_id}}", blocker: "{{occluder_id}}"}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.8, d_max: 3.0}}
+      - {name: AspectExposed, args: {obj: "{{target_id}}", min_ratio: 0.30}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 25}}
+      - {name: ScaleBand,     args: {obj: "{{target_id}}", s_min: 0.05, s_max: 0.60}}
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  has_occluder_with_hidden_identifiable_object: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

@@ -1,0 +1,66 @@
+# T17 – Post-occlusion Existence
+# "Is there anything behind / beside / under the wardrobe?"
+# Agent starts with the target occluder in view but must look around it
+# to confirm whether anything exists in the hidden region.
+
+template_id: T17
+name: post_occlusion_existence
+subclass: C2.2
+priority: P0
+description: >
+  Determine whether a specific target object exists in a region that is
+  currently occluded by a known occluder.
+  The agent must reposition so that the occluder no longer blocks the region
+  of interest, and check for the presence (or absence) of the target object.
+
+question_templates:
+  - "Is there a {target_label} behind the {occluder_label}?"
+  - "Is anything hidden behind the {occluder_label}?"
+  - "Is there a {target_label} beside the {occluder_label} that you cannot see from here?"
+
+answer_type: binary
+answer_choices_generator: binary_yes_no
+
+gt_from: object_exists_in_region
+# GT: target object AABB is present in hidden region (behind occluder) = yes
+
+trigger:
+  # At init_view: target must not be visible (occluded by occluder)
+  target_invisible_at_init: true
+  min_target_occlusion_at_init: 0.70
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: unoccluded_view
+    region_generator: around_occluder_back
+    region_args:
+      occluder: "{{occluder_id}}"
+      target_region: "{{hidden_region}}"   # spatial zone behind occluder
+      dist_min: 0.5
+      dist_max: 3.0
+    predicates:
+      # If target exists (GT=yes): must be visible and unoccluded
+      # If target absent (GT=no): occluder back-region must be visible/clear
+      - {name: NotBlockedBy, args: {obj: "{{occluder_id}}", blocker: null}}
+        # null blocker → checks that camera has a clear sightline past the occluder
+      - {name: Visible, args: {obj: "{{occluder_id}}", min_corners: 2, max_occ: 0.80}}
+        # occluder still in scene to confirm position
+    threshold: 1.0
+    tier2_override: hidden_region_visibility_check
+    # Tier-2: confirms the hidden zone around occluder's back/side is now visible
+    # For GT=yes: also checks Visible(target, min_corners=4, max_occ=0.40)
+    # For GT=no:  checks that the hidden zone is clear of the target label
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2
+  has_occluder_with_hidden_region: true
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 8
+gamma: 0.95

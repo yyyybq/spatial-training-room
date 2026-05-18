@@ -1,0 +1,82 @@
+# T16 – Front-Back Difference Judgment
+# "Does the back of the bookshelf look the same as the front?"
+# C2.1: Self-occlusion. P1. Requires FRONT_NORMAL + FRONT_BACK_DIFF annotation.
+# Dual-slot: agent must view both front AND back to answer definitively.
+
+template_id: T16
+name: front_back_difference
+subclass: C2.1
+priority: P1
+description: >
+  Determine whether the front and back faces of an object are visually distinct
+  (different colour, texture category, or structural appearance).
+  The agent must observe both faces sequentially. This is the hardest C2.1 template
+  because it requires two separate evidence positions (front then back or vice versa),
+  and the question can only be answered after both slots are covered.
+
+p1_requirement: >
+  Needs objects annotated with both front_normal and front_back_diff_flag
+  (bool: are the faces different?) plus optional front_appearance / back_appearance
+  category fields. Only scenes with this annotation instantiate this template.
+
+question_templates:
+  - "Does the {target_label} look the same from the front and from the back?"
+  - "Is the back of the {target_label} different from its front face?"
+  - "Are the front and back of the {target_label} identical or different?"
+
+answer_type: binary
+answer_choices_generator: binary_same_different
+
+gt_from: front_back_diff_flag
+# GT: front_back_diff_flag from labels.json (true = different = "different" answer)
+
+trigger:
+  # At init_view: only one face is visible (front or back, not both)
+  only_one_face_visible_at_init: true
+
+# ---------- Evidence slots (DUAL) ----------
+evidence_slots:
+  - slot_id: front_face_view
+    region_generator: behind_object_face
+    region_args:
+      target: "{{target_id}}"
+      face: front
+      side_theta_deg: 45
+      dist_min: 0.5
+      dist_max: 2.5
+    predicates:
+      - {name: SideView,      args: {obj: "{{target_id}}", side: front, theta_deg: 45}}
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 4, max_occ: 0.20}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.5, d_max: 2.5}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 30}}
+    threshold: 1.0
+
+  - slot_id: back_face_view
+    region_generator: behind_object_face
+    region_args:
+      target: "{{target_id}}"
+      face: back
+      side_theta_deg: 45
+      dist_min: 0.5
+      dist_max: 2.5
+    predicates:
+      - {name: SideView,      args: {obj: "{{target_id}}", side: back, theta_deg: 45}}
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 4, max_occ: 0.20}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.5, d_max: 2.5}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 30}}
+    threshold: 1.0
+
+# BOTH slots must be covered
+coverage_aggregator: mean
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 1
+  objects_require_annotation: [front_normal, front_back_diff_flag]
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 12      # must navigate front→back (typically ≥ 8 steps)
+gamma: 0.95

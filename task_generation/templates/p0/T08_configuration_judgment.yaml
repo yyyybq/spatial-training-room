@@ -1,0 +1,64 @@
+# T08 – Configuration Judgment  (merged T09 Shape Configuration, T10 Parallel/Coaxial, T30 Alignment)
+# "Are A, B, C collinear?", "Do they form a triangle/L-shape?", "Are the two shelves parallel?"
+# Projection illusion: from the wrong angle a non-collinear group looks collinear.
+# Agent must move to a view that breaks the projection ambiguity.
+
+template_id: T08
+name: configuration_judgment
+subclass: C1.3
+priority: P0
+description: >
+  Judge the geometric configuration of a group of objects: collinear, triangular,
+  L-shaped, parallel, coaxial, or another pattern.
+  From certain viewing angles the group projects ambiguously (e.g., non-collinear
+  objects appear collinear when viewed along the group's principal axis).
+  The agent must find a view orthogonal enough to the principal axis to break
+  the projection illusion.
+
+question_templates:
+  - "Are the {labels_str} arranged in a straight line?"
+  - "Do the {labels_str} form a triangle?"
+
+answer_type: binary                # yes/no
+answer_choices_generator: binary_yes_no
+
+gt_from: group_configuration_geometry
+# GT derived from AABB centers: compute principal axis, assess collinearity/shape
+
+trigger:
+  # Only generate when the projection-illusion view is reachable at init:
+  # at init_view, group appears (nearly) collinear even if GT is non-collinear
+  min_projection_ambiguity_deg: 70   # init view is within 70° of principal axis
+  group_size_min: 2
+  group_size_max: 5
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: config_view
+    # Sample views where camera bears 30–75° off principal axis
+    region_generator: view_breaking_projection
+    region_args:
+      group: "{{group_ids}}"
+      axis_angle_min_deg: 30
+      axis_angle_max_deg: 75
+    predicates:
+      # One Visible predicate entry per group member (expanded at instantiation)
+      - {name: Visible,        args: {obj: "{{member_id}}", min_corners: 4, max_occ: 0.30}}
+      - {name: Centered,       args: {obj: "{{group_centroid_proxy}}", theta_deg: 40}}
+      # Tier-2 override checks axis_angle ∈ [30°, 75°] at scoring time
+    threshold: 1.0
+    tier2_override: axis_view_angle_check   # verifies 30° ≤ angle_to_principal_axis ≤ 75°
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 2          # at least 2 in group
+  group_coplanar: true    # objects roughly on same floor level
+
+action_config:
+  move_m: 0.5
+  turn_deg: 30             # finer yaw to find the right off-axis bearing
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

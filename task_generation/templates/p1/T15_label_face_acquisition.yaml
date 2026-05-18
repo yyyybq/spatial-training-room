@@ -1,0 +1,66 @@
+# T15 – Label Face Acquisition
+# "Read the label on the side of the box." / "What brand is on the left face?"
+# C2.1: Self-occlusion. P1 because it requires LABEL_SIDE annotation on object.
+
+template_id: T15
+name: label_face_acquisition
+subclass: C2.1
+priority: P1
+description: >
+  Observe a specific non-front face of an object (left, right, top, or a
+  labelled face) that carries information not visible from the init view.
+  Requires objects annotated with label_side in labels.json specifying
+  which face bears the label/marking of interest.
+
+p1_requirement: >
+  Needs objects annotated with label_side (one of: left, right, top, bottom, back)
+  in labels.json. Only scenes/objects with this annotation instantiate this template.
+
+question_templates:
+  - "What does the label on the {side_name} side of the {target_label} say?"
+  - "Read the marking on the {side_name} face of the {target_label}."
+  - "What brand or text is on the {side_name} side of the {target_label}?"
+
+answer_type: categorical
+answer_choices_generator: label_face_choices
+
+gt_from: label_face_annotation
+# GT stored in labels.json label_face_text or label_face_category field
+
+trigger:
+  # At init_view: the label side is self-occluded (not facing camera)
+  label_side_visible_at_init: false
+  # label_side_angle_at_init > 70° (side is more than 70° away from frontal)
+
+# ---------- Evidence slots ----------
+evidence_slots:
+  - slot_id: label_face_view
+    region_generator: behind_object_face
+    region_args:
+      target: "{{target_id}}"
+      face: "{{label_side}}"     # interpolated from annotation: left/right/top/back
+      side_theta_deg: 40
+      dist_min: 0.5
+      dist_max: 2.5
+    predicates:
+      - {name: SideView,      args: {obj: "{{target_id}}", side: "{{label_side}}", theta_deg: 40}}
+      - {name: Visible,       args: {obj: "{{target_id}}", min_corners: 4, max_occ: 0.20}}
+      - {name: DistanceBand,  args: {obj: "{{target_id}}", d_min: 0.5, d_max: 2.5}}
+      - {name: Centered,      args: {obj: "{{target_id}}", theta_deg: 30}}
+      - {name: ScaleBand,     args: {obj: "{{target_id}}", s_min: 0.05, s_max: 0.60}}
+        # Label must be large enough to read
+    threshold: 1.0
+
+coverage_aggregator: all
+min_coverage_for_credit: 1.0
+
+scene_requirements:
+  min_objects: 1
+  objects_require_annotation: [label_side, label_face_text]
+
+action_config:
+  move_m: 0.50
+  turn_deg: 45
+  look_deg: 15
+max_steps: 10
+gamma: 0.95

@@ -1,0 +1,55 @@
+# APL generation configuration
+# ---------------------------------------------------------------------------
+# Action space
+# ---------------------------------------------------------------------------
+move_distance: 0.5          # metres per move action
+turn_angle: 45.0            # degrees per turn action
+look_angle: 15.0            # degrees per look-up/down action
+max_steps: 7                # maximum sequence length
+
+# Tolerances used by the planner
+distance_tol: 0.20          # metres  — "close enough to target position"
+angle_tol: 10.0             # degrees — "close enough to target heading"
+
+# Camera placement
+camera_height: 0.8          # metres above floor
+
+# Occlusion thresholds
+min_visible_corners: 2      # minimum AABB corners in image to count as "visible"
+max_occ_ratio: 0.80         # maximum allowed occlusion fraction
+
+# ---------------------------------------------------------------------------
+# Passive task settings
+# ---------------------------------------------------------------------------
+passive:
+  task_types:
+    - distance_absolute
+    - direction_face
+    - relative_position
+  target_distances: [0.5, 1.0, 1.5, 2.0]
+  max_items_per_object: 4
+  num_init_views: 6
+
+# ---------------------------------------------------------------------------
+# Active task settings
+# ---------------------------------------------------------------------------
+active:
+  task_types:
+    - visibility_single
+    - visibility_hidden
+    - next_action
+  num_candidates: 8
+  num_distractors: 3
+  min_bearing_hidden: 60.0   # degrees — minimum bearing for "hidden" classification
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  passive_jsonl: "out/apl_passive.jsonl"
+  active_jsonl:  "out/apl_active.jsonl"
+
+# ---------------------------------------------------------------------------
+# Seed
+# ---------------------------------------------------------------------------
+seed: 42

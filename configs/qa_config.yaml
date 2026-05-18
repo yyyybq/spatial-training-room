@@ -1,0 +1,21 @@
+# QA generation configuration
+# ---------------------------------------------------------------------------
+# Generation parameters
+# ---------------------------------------------------------------------------
+max_items_per_view: 2
+render: false                # set to true to render preview images
+question_types: null         # null = all types, or list like [object_count_mca, nearest_object_mca]
+
+# Camera placement
+camera_height: 0.8
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  qa_jsonl: "out/qa_tasks.jsonl"
+
+# ---------------------------------------------------------------------------
+# Seed
+# ---------------------------------------------------------------------------
+seed: 42
