@@ -27,8 +27,12 @@ gt_from: nearest_to_reference_by_aabb_center
 trigger:
   # Distance difference must be detectable visually
   min_dist_difference_m: 0.4
+  min_dist_ratio: 1.25
   # At init: the relative ordering is ambiguous (oblique view or one/both not visible)
   init_ordering_ambiguous: true
+
+init_view:
+  visible_anchors: [["{{obj_a_id}}", "{{obj_b_id}}", "{{reference_id}}"]]
 
 # ---------- Evidence slots ----------
 evidence_slots:

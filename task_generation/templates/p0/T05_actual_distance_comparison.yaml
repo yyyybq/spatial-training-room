@@ -28,6 +28,9 @@ trigger:
   # At init_view neither pair should be simultaneously clearly visible
   max_both_pairs_visible_at_init: false
 
+init_view:
+  visible_anchors: ["{{subject_id}}"]
+
 # ---------- Evidence slots (DUAL) ----------
 evidence_slots:
   - slot_id: AB_view
@@ -56,6 +59,7 @@ evidence_slots:
 
 # Both slots must be covered before answer is credited
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 1.0
 
 scene_requirements:

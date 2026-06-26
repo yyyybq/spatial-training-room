@@ -28,6 +28,9 @@ trigger:
   # At init_view: viewing angle is within 20° of the A→B axis (depth ambiguity)
   max_init_lateral_angle_deg: 20
 
+init_view:
+  visible_anchors: [["{{obj_a_id}}", "{{obj_b_id}}"]]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: lateral_view

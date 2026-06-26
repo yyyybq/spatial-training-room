@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spatial-training-room"
+version = "0.1.0"
+description = "Template-driven data factory for active spatial perception tasks in reconstructed 3D indoor scenes."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Spatial Training Room contributors" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "PyYAML>=6.0",
+  "matplotlib>=3.7",
+  "opencv-python>=4.8",
+]
+
+[project.optional-dependencies]
+render = [
+  "imageio>=2.31",
+  "Pillow>=10",
+  "torch>=2.1",
+  "gsplat",
+]
+inference = [
+  "Pillow>=10",
+  "torch>=2.1",
+  "tqdm>=4.66",
+  "vllm",
+]
+dev = [
+  "pytest>=8",
+]
+all = [
+  "imageio>=2.31",
+  "Pillow>=10",
+  "torch>=2.1",
+  "gsplat",
+  "tqdm>=4.66",
+  "vllm",
+  "pytest>=8",
+]
+
+[project.scripts]
+spatial-room-factory = "spatial_training_room.run_factory:main"
+
+[tool.setuptools]
+packages = [
+  "spatial_training_room",
+  "spatial_training_room.action_space",
+  "spatial_training_room.bench_generation",
+  "spatial_training_room.core",
+  "spatial_training_room.evaluation",
+  "spatial_training_room.motion",
+  "spatial_training_room.task_generation",
+  "spatial_training_room.task_generation.apl_tasks",
+  "spatial_training_room.task_generation.qa_tasks",
+  "spatial_training_room.utils",
+]
+
+[tool.setuptools.package-dir]
+spatial_training_room = "."
+
+[tool.setuptools.package-data]
+spatial_training_room = [
+  "configs/*.yaml",
+  "docs/*.md",
+  "task_generation/templates/p0/*.yaml",
+  "task_generation/templates/p1/*.yaml",
+]

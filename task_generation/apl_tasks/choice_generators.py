@@ -90,6 +90,16 @@ def _similar_aabb_labels(ti, ctx, rng) -> List[str]:
     correct = ti.get("gt_answer") or ti.get("target_label")
     if not correct:
         return []
+    existing = list(ti.get("choices") or [])
+    if existing:
+        out = [correct]
+        for choice in existing:
+            if str(choice).lower() != str(correct).lower() and choice not in out:
+                out.append(choice)
+            if len(out) >= 4:
+                break
+        if len(out) >= 2:
+            return out
     seen = []
     for o in getattr(ctx, "objects", []):
         if o.label.lower() == correct.lower() or o.label in seen:

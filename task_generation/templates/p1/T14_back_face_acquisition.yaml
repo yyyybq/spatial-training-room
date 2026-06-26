@@ -34,6 +34,9 @@ trigger:
   # i.e., viewing angle from front normal ≤ 60°
   max_init_back_angle_deg: 60     # init must be front-facing
 
+init_view:
+  visible_anchors: ["{{target_id}}"]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: back_face_view

@@ -24,6 +24,9 @@ agreed*, *where it lives in the source*, and *what still needs work*.
    submitted view; “drive-by” passing through a good frame must score 0.
 4. **`Score = 1[â=a*] · CovFactor · γ^T`** with
    `CovFactor = min(1, Coverage / min_coverage_for_credit)`.
+   `coverage_mode` controls what "Coverage" means: `submit` (default)
+   evaluates only the final view; `trajectory` allows sequential evidence
+   collection when no single final view can contain all required evidence.
 5. **Reward shaping** via potential differences:
    `r_t = Φ(s_{t+1}) − Φ(s_t)`, terminal step adds the episode score.
 6. **Single uncertainty axis** (no F-A/F-B/D-M…); reflected as a flat
@@ -34,7 +37,7 @@ agreed*, *where it lives in the source*, and *what still needs work*.
 ### B. Schema extensions to `APLActiveTaskItem`
 - `template_id` *(e.g. `T01`)*
 - `subclass`   *(e.g. `C1.1`)*
-- `quality_spec` *(echoes evidence_slots / γ / max_steps / min_coverage)*
+- `quality_spec` *(echoes evidence_slots / coverage_mode / γ / max_steps / min_coverage)*
 - `expert_trajectory: List[ViewState]`
 - `coverage: float`
 - `score: float`
@@ -45,6 +48,8 @@ agreed*, *where it lives in the source*, and *what still needs work*.
 - `evaluation/` provides: `predicates`, `region_generators`, `coverage`,
   `scorer`, `potential`, `expert`, `quality_overrides`, `template_spec`.
 - Tier-2 callables registered via `@register_quality(...)` (5 of them).
+- Use `coverage_mode: trajectory` sparingly, for templates such as T05,
+  T06, T23, T26, T27, T32, and T16.
 - BFS/beam expert: visited keys at `(x/0.25 m, y/0.25 m, yaw/22.5°)`.
 
 ### D. Driver
@@ -78,6 +83,9 @@ agreed*, *where it lives in the source*, and *what still needs work*.
 | 17 | Init-view chosen so slot predicates **fail** | ✅ done | `_sample_failing_init` in [template_active_generator.py](spatial-training-room/task_generation/apl_tasks/template_active_generator.py) |
 
 ### Gaps / partial items — **closed 2026-05-10**
+
+Note: scoring now follows each template's `coverage_mode`: default `submit`,
+with explicit `trajectory` for sequential evidence templates.
 
 | # | Rule | Status | Resolution |
 |---|---|---|---|

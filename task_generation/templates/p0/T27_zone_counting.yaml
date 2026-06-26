@@ -27,6 +27,9 @@ trigger:
   # At init at least one zone is not scannable from starting position
   min_zones_invisible_at_init: 1
 
+init_view:
+  visible_anchors: ["{{target_ids}}"]
+
 # ---------- Evidence slots (one per zone) ----------
 evidence_slots:
   - slot_id: zone_a_scan
@@ -51,6 +54,7 @@ evidence_slots:
     tier2_override: zone_count_check
 
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 1.0    # both zones must be visited
 
 scene_requirements:

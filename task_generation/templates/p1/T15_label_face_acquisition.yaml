@@ -32,6 +32,9 @@ trigger:
   label_side_visible_at_init: false
   # label_side_angle_at_init > 70° (side is more than 70° away from frontal)
 
+init_view:
+  visible_anchors: ["{{target_id}}"]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: label_face_view

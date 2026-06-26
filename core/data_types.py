@@ -193,6 +193,9 @@ class APLActiveTaskItem:
     quality_spec: Dict[str, Any] = field(default_factory=dict)
     expert_trajectory: List[ViewState] = field(default_factory=list)
     coverage: float = 0.0
+    submit_view_coverage: float = 0.0
+    trajectory_evidence_coverage: float = 0.0
+    trajectory_reliability: Dict[str, Any] = field(default_factory=dict)
     score: float = 0.0
     min_steps: int = 0
 
@@ -207,6 +210,7 @@ class APLActiveTaskItem:
             "question": self.question,
             "question_type": self.question_type,
             "answer": self.answer,
+            "gt_answer": self.answer,   # alias used by review tooling
             "choices": self.choices,
             "answer_choice": self.answer_choice,
             "init_view": self.init_view.to_dict(),
@@ -226,6 +230,9 @@ class APLActiveTaskItem:
             "quality_spec": self.quality_spec,
             "expert_trajectory": [v.to_dict() for v in self.expert_trajectory],
             "coverage": self.coverage,
+            "submit_view_coverage": self.submit_view_coverage,
+            "trajectory_evidence_coverage": self.trajectory_evidence_coverage,
+            "trajectory_reliability": self.trajectory_reliability,
             "score": self.score,
             "min_steps": self.min_steps,
         }
@@ -258,6 +265,9 @@ class APLActiveTaskItem:
                 ViewState.from_dict(v) for v in d.get("expert_trajectory", [])
             ],
             coverage=float(d.get("coverage", 0.0)),
+            submit_view_coverage=float(d.get("submit_view_coverage", d.get("coverage", 0.0))),
+            trajectory_evidence_coverage=float(d.get("trajectory_evidence_coverage", d.get("coverage", 0.0))),
+            trajectory_reliability=d.get("trajectory_reliability", {}) or {},
             score=float(d.get("score", 0.0)),
             min_steps=int(d.get("min_steps", 0)),
         )

@@ -1,19 +1,19 @@
 # T20 – Local Bearing Search  (merged T22 Local Target Confirmation)
 # "There's a chair somewhere to your left — can you find it and confirm its colour?"
-# Target is outside the initial FOV; agent must turn/move to bring it into view.
+# Target is not answerably visible at init; agent must turn/move to bring it into view.
 
 template_id: T20
 name: local_bearing_search
 subclass: C2.3
 priority: P0
 description: >
-  The target object is in the same room but outside the initial field of view.
+  The target object is in the same room but not answerably visible at init.
   A coarse bearing hint (left/right/behind/ahead) is given; the agent must
   navigate to confirm the object's presence and answer a visual property question.
   Merged with T22 (target confirmation): both require moving to a BearingWithin region.
 
 question_templates:
-  - "Look for the {target_label} near you. Is it a {choice_a} or a {choice_b}?"
+  - "Find the nearby object — is it {choice_a} or {choice_b}?"
 
 answer_type: categorical
 answer_choices_generator: property_choices   # target label vs distractor
@@ -21,10 +21,13 @@ answer_choices_generator: property_choices   # target label vs distractor
 gt_from: target_label
 
 trigger:
-  # At init: target is NOT visible (outside FOV or back-facing)
+  # At init: target has fewer than 2 visible corners, so it cannot be answered directly.
   target_invisible_at_init: true
   # Bearing hint sector: the target is strictly within [init_bearing ± 45°, init_bearing ± 135°]
   bearing_hint_accuracy_deg: 45   # hint sector half-width
+
+init_view:
+  visible_anchors: ["{{target_id}}"]
 
 # ---------- Evidence slots ----------
 evidence_slots:

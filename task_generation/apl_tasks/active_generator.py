@@ -1,6 +1,12 @@
 """
 APLActiveGenerator — generates Question-Driven Navigation (active) APL tasks.
 
+Legacy note:
+  This module predates the template-driven Active APL system in
+  template_active_generator.py. It is kept for backward compatibility with
+  run_factory.py --mode apl. New release training data should use
+  run_factory.py --mode template --template-id T?? or the template sweep tools.
+
 Supported P0 task types:
   - visibility_single : "What is to your left/right/behind?"  (need to turn)
   - visibility_hidden : "What is [relationship] of [anchor]?" (need to move to see)

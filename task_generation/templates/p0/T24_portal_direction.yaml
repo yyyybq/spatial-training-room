@@ -26,6 +26,9 @@ trigger:
   # Portal must be outside init FOV or at ambiguous bearing
   portal_invisible_at_init: true
 
+init_view:
+  visible_anchors: ["{{portal_id}}"]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: portal_in_view

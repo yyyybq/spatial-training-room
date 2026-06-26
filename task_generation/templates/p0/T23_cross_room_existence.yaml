@@ -26,6 +26,9 @@ trigger:
   rooms_count_min: 2
   target_invisible_from_room_a: true
 
+init_view:
+  visible_anchors: ["{{portal_0_id}}"]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: room_b_scan
@@ -43,6 +46,7 @@ evidence_slots:
     # Tier-2 (GT=no):  confirms InRoom(B) + at least one full-room scan turn (look_deg×360/look_deg steps)
 
 coverage_aggregator: all
+coverage_mode: trajectory
 min_coverage_for_credit: 1.0
 
 scene_requirements:

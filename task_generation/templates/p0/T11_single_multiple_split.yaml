@@ -15,10 +15,9 @@ description: >
   the gap between objects is visible in the image.
 
 question_templates:
-  - "Is that one {label} or are there two separate ones?"
+  - "Is the visible {label} one object or two separate objects?"
   - "How many {label_plural} are there?"
-  - "Are the {label_plural} side-by-side or is one on top of the other?"
-  - "Are those {label_plural} separate objects or is it one piece of furniture?"
+  - "Are the visible {label_plural} separate objects or one piece of furniture?"
 
 answer_type: categorical
 answer_choices_generator: count_and_arrangement
@@ -30,6 +29,9 @@ trigger:
   # i.e., objects look merged from init position
   min_true_instance_count: 2
   max_init_separation_frac: 0.03    # objects appear merged at init
+
+init_view:
+  visible_anchors: ["{{group_centroid_proxy}}"]
 
 # ---------- Evidence slots ----------
 evidence_slots:

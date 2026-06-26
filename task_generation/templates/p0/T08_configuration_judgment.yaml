@@ -29,8 +29,11 @@ trigger:
   # Only generate when the projection-illusion view is reachable at init:
   # at init_view, group appears (nearly) collinear even if GT is non-collinear
   min_projection_ambiguity_deg: 70   # init view is within 70° of principal axis
-  group_size_min: 2
+  group_size_min: 3
   group_size_max: 5
+
+init_view:
+  visible_anchors: ["{{group_ids}}"]
 
 # ---------- Evidence slots ----------
 evidence_slots:

@@ -28,6 +28,9 @@ trigger:
   # Total count is non-trivial: at least 2
   min_total_count: 2
 
+init_view:
+  visible_anchors: [["{{occluder_id}}", "{{hidden_instance_0_id}}"]]
+
 # ---------- Evidence slots ----------
 # One slot per hidden instance (expanded at instantiation)
 # The exposed instances at init don't need evidence slots (already visible)
@@ -45,6 +48,7 @@ evidence_slot_pattern:
   threshold: 1.0
 
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 1.0    # must see ALL hidden instances
 
 scene_requirements:

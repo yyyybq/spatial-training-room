@@ -89,12 +89,14 @@ class TemplateSpec:
     gt_from: str
     evidence_slots: list[EvidenceSlot]
     coverage_aggregator: str = "all"   # "all" | "mean"
+    coverage_mode: str = "submit"      # "submit" | "trajectory"
     min_coverage_for_credit: float = 1.0
     action_config: ActionConfig = field(default_factory=ActionConfig)
     max_steps: int = 10
     gamma: float = 0.95
     scene_requirements: dict[str, Any] = field(default_factory=dict)
     trigger: dict[str, Any] = field(default_factory=dict)
+    init_view: dict[str, Any] = field(default_factory=dict)
     # P1 extra
     p1_requirement: Optional[str] = None
     # Pattern-based multi-slot (T06, T26, T32) — raw YAML preserved for generator
@@ -105,8 +107,18 @@ class TemplateSpec:
 
     @classmethod
     def from_dict(cls, d: dict) -> "TemplateSpec":
+        # Apply unified ``checks:`` projection (Item 6) BEFORE reading legacy
+        # fields, so that authors may write either style and existing YAML
+        # files keep working untouched.
+        d = _project_checks(d)
         slots_raw = d.get("evidence_slots", [])
         slots = [EvidenceSlot.from_dict(s) for s in slots_raw] if slots_raw else []
+        coverage_mode = str(d.get("coverage_mode", "submit")).strip().lower()
+        if coverage_mode not in ("submit", "trajectory"):
+            raise ValueError(
+                f"template {d.get('template_id', '?')}: coverage_mode must be "
+                f"'submit' or 'trajectory', got {coverage_mode!r}"
+            )
         return cls(
             template_id=d["template_id"],
             name=d["name"],
@@ -119,17 +131,122 @@ class TemplateSpec:
             gt_from=d.get("gt_from", ""),
             evidence_slots=slots,
             coverage_aggregator=d.get("coverage_aggregator", "all"),
+            coverage_mode=coverage_mode,
             min_coverage_for_credit=float(d.get("min_coverage_for_credit", 1.0)),
             action_config=ActionConfig.from_dict(d.get("action_config", {})),
             max_steps=int(d.get("max_steps", 10)),
             gamma=float(d.get("gamma", 0.95)),
             scene_requirements=d.get("scene_requirements", {}),
             trigger=d.get("trigger", {}),
+            init_view=d.get("init_view", {}) or {},
             p1_requirement=d.get("p1_requirement"),
             evidence_slot_pattern=d.get("evidence_slot_pattern"),
             caveat=d.get("caveat"),
             weight=float(d.get("weight", 1.0)),
         )
+
+
+# ---------------------------------------------------------------------------
+# Unified ``checks:`` schema (Item 6)
+# ---------------------------------------------------------------------------
+#
+# New YAMLs MAY declare a single ``checks:`` list whose entries are tagged by
+# ``when:`` (scene | init | target).  This is a *cosmetic* surface — at load
+# time we project each entry into the legacy fields below, so generator code
+# and the existing 19 YAML files keep working untouched.
+#
+#   when: scene  -> merged into ``scene_requirements`` (flat dict)
+#   when: init   -> merged into ``trigger``            (flat dict)
+#   when: target -> appended as a predicate to evidence_slots[slot=<slot>]
+#                   (slot defaults to the first existing slot)
+#
+# Example (equivalent to T05's legacy form):
+#
+#   checks:
+#     - {when: scene, name: min_objects, args: 3}
+#     - {when: init,  name: max_both_pairs_visible_at_init, args: false}
+#     - {when: target, slot: AB_view,
+#        name: PairVisible, args: {obj_a: "{{a}}", obj_b: "{{b}}"}}
+#
+# Mixing ``checks:`` with the legacy fields is allowed; the projection MERGES
+# (legacy entries win on key conflict so an explicit override is honoured).
+# ---------------------------------------------------------------------------
+
+
+def _project_checks(d: dict) -> dict:
+    """Return a shallow copy of *d* with ``checks:`` projected into the legacy
+    ``scene_requirements`` / ``trigger`` / ``evidence_slots`` fields.
+
+    No-op when ``checks:`` is absent.
+    """
+    checks = d.get("checks")
+    if not checks:
+        return d
+    if not isinstance(checks, list):
+        raise ValueError(
+            f"template {d.get('template_id', '?')}: 'checks' must be a list, "
+            f"got {type(checks).__name__}"
+        )
+
+    out = dict(d)  # shallow copy; we only mutate top-level fields we add
+    scene_req: dict = dict(out.get("scene_requirements", {}) or {})
+    trigger:  dict = dict(out.get("trigger", {}) or {})
+    # We keep evidence_slots in their list form and edit by slot_id.
+    slots_raw: list = list(out.get("evidence_slots", []) or [])
+
+    def _find_slot(slot_id: Optional[str]) -> dict:
+        if not slots_raw:
+            raise ValueError(
+                f"template {out.get('template_id', '?')}: 'checks' entry has "
+                f"when=target but template defines no evidence_slots"
+            )
+        if slot_id is None:
+            return slots_raw[0]
+        for s in slots_raw:
+            if s.get("slot_id") == slot_id:
+                return s
+        raise ValueError(
+            f"template {out.get('template_id', '?')}: 'checks' references "
+            f"unknown evidence slot_id={slot_id!r}"
+        )
+
+    for i, entry in enumerate(checks):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"template {out.get('template_id', '?')}: checks[{i}] must "
+                f"be a mapping, got {type(entry).__name__}"
+            )
+        when = entry.get("when")
+        name = entry.get("name")
+        args = entry.get("args", {})
+        if when not in ("scene", "init", "target"):
+            raise ValueError(
+                f"template {out.get('template_id', '?')}: checks[{i}].when "
+                f"must be scene|init|target, got {when!r}"
+            )
+        if not name:
+            raise ValueError(
+                f"template {out.get('template_id', '?')}: checks[{i}] missing 'name'"
+            )
+
+        if when == "scene":
+            # Legacy ``scene_requirements`` is a flat dict {field: value}.
+            # The author writes ``{name: min_objects, args: 3}``; we store
+            # min_objects=3.  args may be a scalar or a dict — store as-is.
+            scene_req.setdefault(name, args)
+        elif when == "init":
+            # Same flat-dict shape for ``trigger:``.
+            trigger.setdefault(name, args)
+        else:  # target
+            slot = _find_slot(entry.get("slot"))
+            preds = list(slot.get("predicates", []) or [])
+            preds.append({"name": name, "args": args})
+            slot["predicates"] = preds
+
+    out["scene_requirements"] = scene_req
+    out["trigger"] = trigger
+    out["evidence_slots"] = slots_raw
+    return out
 
 
 # ---------------------------------------------------------------------------

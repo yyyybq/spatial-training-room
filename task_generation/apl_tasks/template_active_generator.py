@@ -30,6 +30,8 @@ import math
 import os
 import random
 import re
+import hashlib
+from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -41,14 +43,19 @@ from ...core import scene_context_ext  # noqa: F401  (apply patches)
 from ...evaluation import (
     TemplateSpec,
     compute_coverage,
+    episode_score,
     find_expert_trajectory,
+    find_robust_expert_trajectory,
     load_template,
     sample_region,
     slot_satisfied_at,
+    slot_almost_satisfied_at,
+    slot_satisfied,
     resolve_slot,
 )
 from ...evaluation.template_spec import EvidenceSlot, PredicateSpec
 from .choice_generators import build_choices, CHOICE_REGISTRY
+from .init_validators import score_init_view
 
 
 class SceneRequirementUnmet(Exception):
@@ -82,7 +89,13 @@ def _candidate_objects(scene_ctx, exclude_labels=None) -> list:
     """Return object AABBs not in the exclude list."""
     if exclude_labels is None:
         exclude_labels = {"wall", "floor", "ceiling", "room"}
-    return [o for o in scene_ctx.objects if o.label.lower() not in exclude_labels]
+    generic_labels = {
+        "other", "others", "object", "objects", "unknown", "misc", "miscellaneous",
+    }
+    return [
+        o for o in scene_ctx.objects
+        if o.label.lower() not in exclude_labels and o.label.lower() not in generic_labels
+    ]
 
 
 def _pluralize(word: str) -> str:
@@ -104,6 +117,16 @@ def _pluralize(word: str) -> str:
     if w.endswith('y') and len(w) > 1 and w[-2] not in 'aeiou':
         return word[:-1] + 'ies'
     return word + 's'
+
+
+def _looks_plural(noun: str) -> bool:
+    """Heuristic: scene labels ending with 's' are usually plural."""
+    n = (noun or "").strip().lower()
+    if not n:
+        return False
+    if n.endswith(("ss", "us", "is")):
+        return False
+    return n.endswith("s")
 
 
 # Keyword sets for room name inference
@@ -156,6 +179,100 @@ def _other_labels(scene_ctx, primary_label: str, k: int) -> List[str]:
     return seen
 
 
+def _dims(o) -> np.ndarray:
+    return np.asarray(o.bmax - o.bmin, dtype=float)
+
+
+def _center(o) -> np.ndarray:
+    return 0.5 * (np.asarray(o.bmin, dtype=float) + np.asarray(o.bmax, dtype=float))
+
+
+def _xy_distance(a, b) -> float:
+    return float(np.linalg.norm((_center(a) - _center(b))[:2]))
+
+
+def _volume(o) -> float:
+    return float(np.prod(np.clip(_dims(o), 1e-6, None)))
+
+
+def _shape_distance(a, b) -> float:
+    """Scale-invariant AABB shape distance; lower means more visually confusable."""
+    da = np.sort(np.clip(_dims(a), 1e-6, None))
+    db = np.sort(np.clip(_dims(b), 1e-6, None))
+    da = da / max(float(np.linalg.norm(da)), 1e-6)
+    db = db / max(float(np.linalg.norm(db)), 1e-6)
+    return float(np.linalg.norm(da - db))
+
+
+def _same_room(scene_ctx, a, b) -> bool:
+    try:
+        ra = scene_ctx.room_id_for_object(a.id)
+        rb = scene_ctx.room_id_for_object(b.id)
+        return bool(ra and rb and ra == rb)
+    except Exception:
+        return False
+
+
+_T01_CONFUSABLE_GROUPS = [
+    {"cabinet", "wardrobe", "bookshelf", "bookcase", "sideboard", "dresser", "piano"},
+    {"chair", "armchair", "stool", "bench", "ottoman"},
+    {"table", "desk", "coffee table", "dining table", "side table", "nightstand", "bedside table"},
+    {"sofa", "couch", "settee", "bed", "bench"},
+    {"lamp", "floor lamp", "table lamp", "vase", "plant", "flowerpot"},
+]
+
+
+def _labels_in_same_confusion_group(a_label: str, b_label: str) -> bool:
+    a = a_label.lower()
+    b = b_label.lower()
+    return any(a in group and b in group for group in _T01_CONFUSABLE_GROUPS)
+
+
+def _shape_similar(a, b, max_shape_dist: float = 0.18, max_volume_ratio: float = 2.5) -> bool:
+    va, vb = _volume(a), _volume(b)
+    if min(va, vb) <= 1e-6:
+        return False
+    return (
+        _shape_distance(a, b) <= max_shape_dist
+        and max(va, vb) / min(va, vb) <= max_volume_ratio
+    )
+
+
+def _t01_confusing_distractors(scene_ctx, target, limit: int = 3) -> List[str]:
+    distractors: List[tuple[float, str]] = []
+    for other in _candidate_objects(scene_ctx):
+        if other.id == target.id or other.label.lower() == target.label.lower():
+            continue
+        semantic = _labels_in_same_confusion_group(target.label, other.label)
+        shape_ok = _shape_similar(target, other)
+        if not (semantic or shape_ok):
+            continue
+        score = _shape_distance(target, other) + (0.0 if semantic else 0.15)
+        distractors.append((score, other.label))
+    out: List[str] = []
+    for _, label in sorted(distractors, key=lambda x: x[0]):
+        if label not in out:
+            out.append(label)
+        if len(out) >= limit:
+            break
+    return out
+
+
+_FINE_OBJECT_LABELS = {
+    "book", "bottle", "cup", "mug", "plate", "bowl", "pen", "remote", "phone",
+    "candle", "clock", "ornament", "fruit", "glass",
+}
+
+
+def _is_meaningful_object(o, min_volume: float = 0.02) -> bool:
+    label = o.label.lower()
+    return label not in _FINE_OBJECT_LABELS and _volume(o) >= min_volume
+
+
+def _labels_semantically_close(a_label: str, b_label: str) -> bool:
+    return a_label.lower() == b_label.lower() or _labels_in_same_confusion_group(a_label, b_label)
+
+
 # ---------------------------------------------------------------------------
 # T01 — Category Recognition
 # ---------------------------------------------------------------------------
@@ -165,15 +282,14 @@ def _instantiate_T01(spec, scene_ctx, rng) -> Optional[Dict[str, Any]]:
     candidates = _candidate_objects(scene_ctx)
     rng.shuffle(candidates)
     for box in candidates:
+        distractors = _t01_confusing_distractors(scene_ctx, box, limit=3)
+        if len(distractors) < 1:
+            continue
         ti = {
             "target_id": box.id,
             "target_label": box.label,
             "gt_answer": box.label,
         }
-        # Choices: target label + 2 other labels in the scene
-        distractors = _other_labels(scene_ctx, box.label, 3)
-        if len(distractors) < 1:
-            continue
         ti["choices"] = [box.label] + distractors[:3]
         rng.shuffle(ti["choices"])
         return ti
@@ -184,25 +300,61 @@ def _instantiate_T01(spec, scene_ctx, rng) -> Optional[Dict[str, Any]]:
 # T04, T05 — pair / triple lookups (best-effort: pick objects sharing room)
 # ---------------------------------------------------------------------------
 
+# Categories so obviously large/small that any cross-category pair is trivially answerable
+_T04_OBVIOUSLY_LARGE = {
+    "cabinet", "wardrobe", "sofa", "bed", "bookshelf", "table", "desk",
+    "bathtub", "shower", "refrigerator", "washing machine", "dining table",
+    "coffee table", "sideboard", "wardrobe", "chest of drawers", "dresser",
+}
+_T04_OBVIOUSLY_SMALL = {
+    "book", "bottle", "cup", "mug", "phone", "remote", "pen", "vase",
+    "ornament", "fruit", "toy", "bowl", "plate", "lamp", "candle",
+    "glass", "kettle", "clock",
+}
+
+
 @register_instantiator("T04")
 def _instantiate_T04(spec, scene_ctx, rng):
-    objs = _candidate_objects(scene_ctx)
+    objs = [o for o in _candidate_objects(scene_ctx) if _is_meaningful_object(o)]
     if len(objs) < 2:
         return None
     rng.shuffle(objs)
-    a, b = objs[0], objs[1]
-    # Compare AABB diagonals
-    diag_a = float(np.linalg.norm(a.bmax - a.bmin))
-    diag_b = float(np.linalg.norm(b.bmax - b.bmin))
-    if abs(diag_a - diag_b) < 0.05:
-        return None
-    larger = a.id if diag_a > diag_b else b.id
-    return {
-        "obj_a_id": a.id, "obj_a_label": a.label,
-        "obj_b_id": b.id, "obj_b_label": b.label,
-        "gt_answer": larger,
-        "choices": [a.id, b.id],
-    }
+    min_vol_ratio = float(getattr(spec, "trigger", {}).get("min_true_volume_ratio", 2.0))
+    max_vol_ratio = float(getattr(spec, "trigger", {}).get("max_true_volume_ratio", 4.0))
+    pairs = []
+    for i, a in enumerate(objs):
+        for b in objs[i + 1:]:
+            if not _same_room(scene_ctx, a, b):
+                continue
+            if not (_labels_semantically_close(a.label, b.label) or _shape_similar(a, b, max_volume_ratio=max_vol_ratio)):
+                continue
+            pairs.append((a, b))
+    rng.shuffle(pairs)
+    # Prefer a same-room, same-family pair whose size difference is visible but
+    # not so large that everyday priors alone answer the question.
+    for a, b in pairs:
+        if a.label == b.label:
+            continue
+        # Skip pairs where common knowledge makes the size difference trivially obvious
+        a_lo, b_lo = a.label.lower(), b.label.lower()
+        if ((a_lo in _T04_OBVIOUSLY_LARGE and b_lo in _T04_OBVIOUSLY_SMALL) or
+                (a_lo in _T04_OBVIOUSLY_SMALL and b_lo in _T04_OBVIOUSLY_LARGE)):
+            continue
+        vol_a = _volume(a)
+        vol_b = _volume(b)
+        if min(vol_a, vol_b) < 1e-6:
+            continue
+        ratio = max(vol_a, vol_b) / min(vol_a, vol_b)
+        if ratio < min_vol_ratio or ratio > max_vol_ratio:
+            continue
+        larger_label = a.label if vol_a > vol_b else b.label
+        return {
+            "obj_a_id": a.id, "obj_a_label": a.label,
+            "obj_b_id": b.id, "obj_b_label": b.label,
+            "gt_answer": larger_label,
+            "choices": [a.label, b.label],
+        }
+    return None
 
 
 @register_instantiator("T05")
@@ -258,7 +410,61 @@ def _instantiate_T11(spec, scene_ctx, rng):
     if len(objs) < 2:
         return None
     rng.shuffle(objs)
-    group = objs[:rng.randint(2, min(4, len(objs)))]
+    similar_pairs = []
+    for i, a in enumerate(objs):
+        for b in objs[i + 1:]:
+            if not _same_room(scene_ctx, a, b):
+                continue
+            dist_xy = _xy_distance(a, b)
+            if dist_xy > 1.2:
+                continue
+            same_label = a.label.lower() == b.label.lower()
+            similar_shape = _shape_similar(a, b, max_shape_dist=0.16, max_volume_ratio=2.0)
+            if not (same_label or similar_shape):
+                continue
+            if abs(_center(a)[2] - _center(b)[2]) > 0.8:
+                continue
+            similar_pairs.append((dist_xy, a, b))
+    similar_pairs.sort(key=lambda x: x[0])
+    # ~40 % of the time generate a "single" task so the dataset is balanced.
+    # GT="single": pick one object; the agent approaches and confirms it is a
+    # single piece.  SeparationOnImage(pair_a_id == pair_b_id) returns True
+    # trivially, so the coverage slot is satisfied whenever the agent is close
+    # enough to see the object clearly.
+    if rng.random() < 0.40:
+        solo_pool = []
+        for o in objs:
+            if any(o.id in (a.id, b.id) for _, a, b in similar_pairs):
+                solo_pool.append(o)
+        if not solo_pool:
+            solo_pool = objs
+        solo = rng.choice(solo_pool)
+        return {
+            "group_ids":            [solo.id],
+            "member_id":            solo.id,
+            "pair_a_id":            solo.id,
+            "pair_b_id":            solo.id,
+            "group_centroid_proxy": solo.id,
+            "label":                solo.label,
+            "label_plural":         _pluralize(solo.label),
+            "gt_answer":            "single",
+            "choices":              ["single", "multiple"],
+        }
+    if not similar_pairs:
+        return None
+    _, a, b = similar_pairs[0]
+    group = [a, b]
+    # Add at most one more nearby same/similar item, keeping the cluster tight.
+    for o in objs:
+        if o.id in {a.id, b.id}:
+            continue
+        if not _same_room(scene_ctx, a, o):
+            continue
+        if _xy_distance(o, a) > 1.4 and _xy_distance(o, b) > 1.4:
+            continue
+        if o.label.lower() == a.label.lower() or _shape_similar(o, a, max_shape_dist=0.18, max_volume_ratio=2.2):
+            group.append(o)
+            break
     group_ids = [o.id for o in group]
     # Find centroid proxy (object nearest to group centroid)
     centres = np.stack([0.5 * (o.bmin + o.bmax) for o in group])
@@ -273,7 +479,7 @@ def _instantiate_T11(spec, scene_ctx, rng):
         "pair_b_id":           group_ids[1] if len(group_ids) > 1 else group_ids[0],
         "group_centroid_proxy": centroid_proxy.id,
         "label":               label,
-        "label_plural":        label + "s",
+        "label_plural":        _pluralize(label),
         "gt_answer":           "multiple",
         "choices":             ["single", "multiple"],
     }
@@ -322,6 +528,30 @@ def _instantiate_T17(spec, scene_ctx, rng):
     occ_id, tgt_id = pair
     occ = scene_ctx.get_aabb(occ_id)
     tgt = scene_ctx.get_aabb(tgt_id)
+    # ~40 % of the time: GT="no" — a plausible but absent target label.
+    # hidden_region_visibility_check handles GT=="no" by evaluating the slot
+    # predicates at submit (clear sightline past occluder) rather than
+    # checking target visibility, so target_id="" is safe.
+    if rng.random() < 0.40:
+        decoy_labels = []
+        target_room = scene_ctx.room_id_for_object(tgt.id)
+        for o in _candidate_objects(scene_ctx):
+            if o.id in {occ_id, tgt_id} or o.label == tgt.label:
+                continue
+            same_room = target_room and scene_ctx.room_id_for_object(o.id) == target_room
+            plausible_shape = _shape_similar(tgt, o, max_shape_dist=0.25, max_volume_ratio=3.0)
+            plausible_semantic = _labels_in_same_confusion_group(tgt.label, o.label)
+            if same_room and (plausible_shape or plausible_semantic) and o.label not in decoy_labels:
+                decoy_labels.append(o.label)
+        if decoy_labels:
+            decoy_label = rng.choice(decoy_labels)
+            return {
+                "occluder_id": occ_id, "occluder_label": occ.label,
+                "target_id":   "",    "target_label":   decoy_label,
+                "hidden_region": (0.5 * (tgt.bmin + tgt.bmax)).tolist(),
+                "gt_answer": "no",
+                "choices": ["yes", "no"],
+            }
     return {
         "occluder_id": occ_id, "occluder_label": occ.label,
         "target_id":   tgt_id, "target_label":   tgt.label,
@@ -339,7 +569,7 @@ def _instantiate_T18(spec, scene_ctx, rng):
     occ_id, tgt_id = pair
     tgt = scene_ctx.get_aabb(tgt_id)
     occ = scene_ctx.get_aabb(occ_id)
-    distractors = _other_labels(scene_ctx, tgt.label, 2)
+    distractors = _t01_confusing_distractors(scene_ctx, tgt, limit=3)
     if not distractors:
         return None
     return {
@@ -380,8 +610,17 @@ def _instantiate_T20(spec, scene_ctx, rng):
         room_id = scene_ctx.room_id_for_object(tgt.id)
         if not room_id:
             continue
-        # Pick a distractor with a different label
-        distractors = [o for o in objs if o.label != tgt.label and o.id != tgt.id]
+        room_objs = [o for o in objs if scene_ctx.room_id_for_object(o.id) == room_id]
+        if len(room_objs) < 2:
+            continue
+        distractors = [
+            o for o in room_objs
+            if o.label != tgt.label
+            and o.id != tgt.id
+            and (_labels_semantically_close(tgt.label, o.label) or _shape_similar(tgt, o, max_volume_ratio=3.0))
+        ]
+        if not distractors:
+            distractors = [o for o in room_objs if o.label != tgt.label and o.id != tgt.id]
         if not distractors:
             continue
         distractor = rng.choice(distractors)
@@ -403,8 +642,10 @@ def _instantiate_T20(spec, scene_ctx, rng):
 @register_instantiator("T21")
 def _instantiate_T21(spec, scene_ctx, rng):
     # Pick 3 objects from the SAME room so view_of_triple can see all three.
-    # Also require the distance-to-reference difference ≥ 0.4 m (YAML trigger).
-    MIN_DIST_DIFF = 0.4
+    # Also require absolute and relative distance asymmetry.
+    trig = getattr(spec, "trigger", {})
+    MIN_DIST_DIFF = float(trig.get("min_dist_difference_m", 0.4))
+    MIN_DIST_RATIO = float(trig.get("min_dist_ratio", 1.25))
     rooms = scene_ctx.room_ids()
     rng.shuffle(rooms)
     for room in rooms:
@@ -431,6 +672,8 @@ def _instantiate_T21(spec, scene_ctx, rng):
                     db = float(np.linalg.norm(0.5 * (b.bmin + b.bmax) - ref_c))
                     if abs(da - db) < MIN_DIST_DIFF:
                         continue
+                    if min(da, db) <= 1e-6 or max(da, db) / min(da, db) < MIN_DIST_RATIO:
+                        continue
                     closer_label = a.label if da < db else b.label
                     return {
                         "obj_a_id": a.id, "obj_a_label": a.label,
@@ -451,47 +694,53 @@ def _instantiate_T21(spec, scene_ctx, rng):
 
 @register_instantiator("T23")
 def _instantiate_T23(spec, scene_ctx, rng):
-    rooms = scene_ctx.room_ids()
-    if len(rooms) < 2:
-        return None
-    rng.shuffle(rooms)
-    room_a, room_b = rooms[0], rooms[1]
-    # Find an object inside room_b
-    target = None
-    for o in _candidate_objects(scene_ctx):
-        c = 0.5 * (o.bmin + o.bmax)
-        if scene_ctx.is_position_in_room_id(c, room_b):
-            target = o
-            break
-    if target is None:
-        return None
-    return {
-        "room_a_id": room_a, "room_b_id": room_b,
-        "room_b_name": str(room_b),
-        "target_id": target.id, "target_label": target.label,
-        "target_label_plural": target.label + "s",
-        "gt_answer": "yes",
-        "choices": ["yes", "no"],
-    }
-
-
-# ---------------------------------------------------------------------------
-# T24 — portal direction (requires portal)
-# ---------------------------------------------------------------------------
-
-@register_instantiator("T24")
-def _instantiate_T24(spec, scene_ctx, rng):
-    portals = scene_ctx._portals()
+    portals = [
+        p for p in scene_ctx._portals()
+        if p.get("type") == "DOOR" and p.get("room_a") and p.get("room_b")
+    ]
     if not portals:
         return None
-    p = rng.choice(portals)
+    rng.shuffle(portals)
+    portal = portals[0]
+    room_a, room_b = portal["room_a"], portal["room_b"]
     rooms = scene_ctx.room_ids()
+    objs_a = [o for o in _candidate_objects(scene_ctx)
+              if scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), room_a)]
+    objs_b = [o for o in _candidate_objects(scene_ctx)
+              if scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), room_b)]
+    if not objs_b:
+        return None
+    # ~40 % of the time: GT="no" — pick a label present in room_a but absent
+    # from room_b.  The agent must enter room_b to disprove its presence.
+    # cross_room_existence_check handles GT=="no" by checking InRoom(room_b)
+    # at submit, so target_id="" is safe.
+    if rng.random() < 0.40 and objs_a:
+        labels_b = {o.label.lower() for o in objs_b}
+        absent = [o for o in objs_a if o.label.lower() not in labels_b]
+        if absent:
+            decoy = rng.choice(absent)
+            all_rooms = rooms  # already the full list from scene_ctx.room_ids()
+            return {
+                "room_a_id": room_a, "room_b_id": room_b,
+                "portal_0_id": portal["id"],
+                "portal_0_proxy_id": portal["id"],
+                "room_b_name": _infer_room_name(scene_ctx, room_b, all_rooms.index(room_b)),
+                "target_id": "", "target_label": decoy.label,
+                "target_label_plural": _pluralize(decoy.label),
+                "gt_answer": "no",
+                "choices": ["yes", "no"],
+            }
+    rng.shuffle(objs_b)
+    target = objs_b[0]
     return {
-        "portal_id": p["id"],
-        "room_a_id": p.get("room_a") or (rooms[0] if rooms else None),
-        "room_b_id": p.get("room_b") or (rooms[1] if len(rooms) > 1 else None),
-        "gt_answer": "left",
-        "choices": ["left", "right", "ahead", "behind"],
+        "room_a_id": room_a, "room_b_id": room_b,
+        "portal_0_id": portal["id"],
+        "portal_0_proxy_id": portal["id"],
+        "room_b_name": _infer_room_name(scene_ctx, room_b, rooms.index(room_b)),
+        "target_id": target.id, "target_label": target.label,
+        "target_label_plural": _pluralize(target.label),
+        "gt_answer": "yes",
+        "choices": ["yes", "no"],
     }
 
 
@@ -501,24 +750,44 @@ def _instantiate_T24(spec, scene_ctx, rng):
 
 @register_instantiator("T08")
 def _instantiate_T08(spec, scene_ctx, rng):
-    """Pick a small group (2-5) from the SAME room so view_breaking_projection
+    """Pick a small group (3-5) from the SAME room so view_breaking_projection
     generates valid positions around a within-room centroid."""
     rooms = scene_ctx.room_ids()
     rng.shuffle(rooms)
+    min_size = int(getattr(spec, "trigger", {}).get("group_size_min", 3))
+    max_size = int(getattr(spec, "trigger", {}).get("group_size_max", 5))
     for room in rooms:
         objs_in_room = [
             o for o in _candidate_objects(scene_ctx)
-            if scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), room)
+            if _is_meaningful_object(o)
+            and scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), room)
         ]
-        if len(objs_in_room) < 2:
+        if len(objs_in_room) < min_size:
             continue
         rng.shuffle(objs_in_room)
-        size = rng.randint(2, min(5, len(objs_in_room)))
-        group = objs_in_room[:size]
-        # Ensure all objects in the group have distinct labels to avoid "X, X, Y" questions
-        seen_labels: set = set()
-        group = [o for o in group if not (o.label in seen_labels or seen_labels.add(o.label))]
-        if len(group) < 2:
+        group = None
+        for seed in objs_in_room:
+            seen_labels: set = set()
+            local_group = []
+            for obj in sorted(objs_in_room, key=lambda o: _xy_distance(seed, o)):
+                if obj.label in seen_labels:
+                    continue
+                if local_group and _xy_distance(seed, obj) > 2.8:
+                    continue
+                local_group.append(obj)
+                seen_labels.add(obj.label)
+                if len(local_group) >= min(max_size, len(objs_in_room)):
+                    break
+            if len(local_group) < min_size:
+                continue
+            local_group = local_group[:rng.randint(min_size, min(max_size, len(local_group)))]
+            local_centres = np.stack([_center(o) for o in local_group])[:, :2]
+            radius = max(float(np.linalg.norm(c - local_centres.mean(axis=0))) for c in local_centres)
+            if radius > 2.2:
+                continue
+            group = local_group
+            break
+        if group is None:
             continue
         centres = np.stack([0.5 * (o.bmin + o.bmax) for o in group])[:, :2]
         centroid_2d = centres.mean(axis=0)
@@ -600,29 +869,47 @@ def _instantiate_T27(spec, scene_ctx, rng):
     rooms = scene_ctx.room_ids()
     if len(rooms) < 2:
         return None
-    rng.shuffle(rooms)
-    zone_a, zone_b = rooms[0], rooms[1]
-    # Pick a target label that appears in either zone
     by_label: Dict[str, List[Any]] = {}
     for o in _candidate_objects(scene_ctx):
         by_label.setdefault(o.label.lower(), []).append(o)
-    target_label = None
-    ids_in_a: List[str] = []
-    ids_in_b: List[str] = []
-    for lab, items in by_label.items():
-        in_a = [o for o in items if scene_ctx.is_position_in_room_id(0.5*(o.bmin+o.bmax), zone_a)]
-        in_b = [o for o in items if scene_ctx.is_position_in_room_id(0.5*(o.bmin+o.bmax), zone_b)]
-        if in_a and in_b:
-            target_label = lab
-            ids_in_a = [o.id for o in in_a]
-            ids_in_b = [o.id for o in in_b]
+
+    connected = set()
+    try:
+        for p in scene_ctx._portals():
+            a, b = p.get("room_a"), p.get("room_b")
+            if a and b:
+                connected.add((a, b))
+                connected.add((b, a))
+    except Exception:
+        pass
+
+    room_pairs = [(a, b) for a in rooms for b in rooms if a != b]
+    rng.shuffle(room_pairs)
+    room_pairs.sort(key=lambda ab: 0 if ab in connected else 1)
+
+    labels = list(by_label.items())
+    rng.shuffle(labels)
+    chosen = None
+    for zone_a, zone_b in room_pairs:
+        for lab, items in labels:
+            in_a = [
+                o for o in items
+                if scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), zone_a)
+            ]
+            in_b = [
+                o for o in items
+                if scene_ctx.is_position_in_room_id(0.5 * (o.bmin + o.bmax), zone_b)
+            ]
+            # Both evidence slots use zone_count_check; an empty-zone slot is
+            # unsatisfiable, so require at least one target instance per zone.
+            if in_a and in_b and len(in_a) <= 5 and len(in_b) <= 5:
+                chosen = (zone_a, zone_b, lab, [o.id for o in in_a], [o.id for o in in_b])
+                break
+        if chosen:
             break
-        if (in_a or in_b) and len(in_a) + len(in_b) >= 2:
-            target_label = lab
-            ids_in_a = [o.id for o in in_a]
-            ids_in_b = [o.id for o in in_b]
-    if not target_label or (not ids_in_a and not ids_in_b):
+    if not chosen:
         return None
+    zone_a, zone_b, target_label, ids_in_a, ids_in_b = chosen
     target_ids = ids_in_a + ids_in_b
     n_a = len(ids_in_a)
     n_b = len(ids_in_b)
@@ -633,7 +920,6 @@ def _instantiate_T27(spec, scene_ctx, rng):
     for idx, rid in enumerate(all_room_ids):
         room_names[rid] = _infer_room_name(scene_ctx, rid, idx)
     # Disambiguate duplicate names by appending a counter
-    from collections import Counter
     name_counts = Counter(room_names.values())
     name_seen: Dict[str, int] = {}
     for rid in all_room_ids:
@@ -679,6 +965,15 @@ def _instantiate_T16(spec, scene_ctx, rng):
 # T06 — Clearance Assessment   (DOOR-portal + moveable object)
 # ---------------------------------------------------------------------------
 
+# Only solid furniture that would realistically be moved through a doorway
+_T06_MOVEABLE_FURNITURE = {
+    "sofa", "couch", "settee", "table", "coffee table", "dining table", "desk",
+    "chair", "armchair", "stool", "bench", "wardrobe", "cabinet", "sideboard",
+    "bed", "bunk bed", "bookshelf", "bookcase", "dresser", "chest of drawers",
+    "nightstand", "bedside table", "refrigerator", "washing machine",
+    "dishwasher", "dryer", "luggage", "suitcase", "trolley",
+}
+
 def _xy_max_dim(o):
     return float(max(o.bmax[0] - o.bmin[0], o.bmax[1] - o.bmin[1]))
 
@@ -694,7 +989,8 @@ def _instantiate_T06(spec, scene_ctx, rng):
             f"scene has {sum(1 for p in scene_ctx._portals() if p['type']=='DOOR')} doors total."
         )
     cands = _candidate_objects(scene_ctx)
-    cands = [o for o in cands if 0.30 <= _xy_max_dim(o) <= 3.0]
+    cands = [o for o in cands if 0.30 <= _xy_max_dim(o) <= 3.0
+             and o.label.lower() in _T06_MOVEABLE_FURNITURE]
     if not cands:
         raise SceneRequirementUnmet("T06 needs a moveable object with max XY dim in [0.3, 3.0] m")
     rng.shuffle(portals); rng.shuffle(cands)
@@ -720,7 +1016,7 @@ def _instantiate_T06(spec, scene_ctx, rng):
                 }
     # Fallback: any door + any moveable object (will be very-easy task).
     p = portals[0]; tgt = cands[0]
-    gt = "yes" if portal["width"] > _xy_max_dim(tgt) else "no"
+    gt = "yes" if p["width"] > _xy_max_dim(tgt) else "no"
     return {
         "target_id": tgt.id, "target_label": tgt.label,
         "bottleneck_0_id": p["id"],
@@ -743,7 +1039,6 @@ def _instantiate_T06(spec, scene_ctx, rng):
 
 @register_instantiator("T26")
 def _instantiate_T26(spec, scene_ctx, rng):
-    from collections import defaultdict
     by_label = defaultdict(list)
     for o in _candidate_objects(scene_ctx):
         by_label[o.label.lower()].append(o)
@@ -755,30 +1050,62 @@ def _instantiate_T26(spec, scene_ctx, rng):
         )
     rng.shuffle(groups)
     for label, items in groups:
-        cluster = sorted(items, key=lambda o: float(np.linalg.norm(0.5*(o.bmin+o.bmax))))[:6]
-        centre = np.mean([0.5*(o.bmin+o.bmax) for o in cluster], axis=0)
-        # Occluder = largest non-same-label object whose centre lies near the cluster
-        occluder = None; best_d = 1e9
+        items = list(items)
+        rng.shuffle(items)
+        best_cluster = None
+        best_radius = float("inf")
+        for seed in items:
+            neighbours = sorted(items, key=lambda o: _xy_distance(seed, o))[:6]
+            if len(neighbours) < 3:
+                continue
+            centre = np.mean([_center(o) for o in neighbours], axis=0)
+            radius = max(float(np.linalg.norm((_center(o) - centre)[:2])) for o in neighbours)
+            if radius <= 2.0 and radius < best_radius:
+                best_cluster = neighbours
+                best_radius = radius
+        if not best_cluster:
+            continue
+        cluster = best_cluster
+        centre = np.mean([_center(o) for o in cluster], axis=0)
+        occluder = None
+        best_score = float("inf")
         for cand in _candidate_objects(scene_ctx):
             if cand.label.lower() == label:
                 continue
             cdiag = float(np.linalg.norm(cand.bmax - cand.bmin))
-            cc = 0.5*(cand.bmin + cand.bmax)
+            cc = _center(cand)
             d = float(np.linalg.norm(cc - centre))
             # Want a sizeable occluder (≥0.4m diag) within 2m of cluster centre
-            if cdiag >= 0.40 and d < 2.0 and d < best_d:
-                occluder = cand; best_d = d
+            if cdiag >= 0.60 and d < 1.8:
+                score = d - 0.15 * cdiag
+                if score < best_score:
+                    occluder = cand
+                    best_score = score
         if occluder is None:
             continue
+        oc = _center(occluder)
+        hidden_candidates = sorted(
+            cluster,
+            key=lambda o: (
+                float(np.linalg.norm((_center(o) - oc)[:2])),
+                -float(np.linalg.norm(_dims(o))),
+            ),
+        )[: min(3, len(cluster))]
+        if not hidden_candidates:
+            continue
         plural = label + ("s" if not label.endswith("s") else "")
-        total = len(items)
-        return {
+        total = len(cluster)
+        ti = {
             "target_label": label, "target_label_plural": plural,
             "occluder_id": occluder.id, "occluder_label": occluder.label,
-            "hidden_instance_0_id": cluster[0].id,
+            "num_evidence_slots": len(hidden_candidates),
+            "cluster_instance_ids": [o.id for o in cluster],
             "gt_answer": str(total),
             "choices": [str(total), str(max(1, total-1)), str(total+1), str(max(1, total-2))],
         }
+        for i, obj in enumerate(hidden_candidates):
+            ti[f"hidden_instance_{i}_id"] = obj.id
+        return ti
     raise SceneRequirementUnmet("T26: cluster found but no suitable occluder within 2 m")
 
 
@@ -792,6 +1119,51 @@ def _aabb_overlap_xy(a, b):
     return float(np.prod(np.clip(hi - lo, 0, None)))
 
 
+def _aabb_area_xy(o):
+    d = np.clip(o.bmax[:2] - o.bmin[:2], 1e-6, None)
+    return float(d[0] * d[1])
+
+
+def _aabb_gap_xy(a, b):
+    gap_x = max(float(a.bmin[0] - b.bmax[0]), float(b.bmin[0] - a.bmax[0]), 0.0)
+    gap_y = max(float(a.bmin[1] - b.bmax[1]), float(b.bmin[1] - a.bmax[1]), 0.0)
+    return float(math.hypot(gap_x, gap_y))
+
+
+_T29_SUPPORT_SURFACES = {
+    "table", "desk", "coffee table", "dining table", "side table", "nightstand",
+    "bedside table", "cabinet", "sideboard", "dresser", "chest of drawers",
+    "shelf", "bookshelf", "bookcase", "counter", "sink",
+}
+_T29_SUPPORTED_OBJECTS = {
+    "lamp", "table lamp", "vase", "plant", "flowerpot", "book", "bottle",
+    "cup", "mug", "bowl", "plate", "clock", "candle", "box", "remote",
+    "phone", "ornament",
+}
+_T29_BESIDE_OBJECTS = {
+    "chair", "armchair", "stool", "bench", "ottoman", "sofa", "couch", "bed",
+    "table", "desk", "coffee table", "dining table", "side table", "nightstand",
+    "cabinet", "wardrobe", "dresser", "bookshelf", "bookcase", "plant",
+    "floor lamp",
+}
+
+
+def _t29_can_rest_on(top, bottom) -> bool:
+    return (
+        top.label.lower() in _T29_SUPPORTED_OBJECTS
+        and bottom.label.lower() in _T29_SUPPORT_SURFACES
+        and _aabb_area_xy(top) <= 0.75 * _aabb_area_xy(bottom)
+    )
+
+
+def _t29_can_be_beside(a, b) -> bool:
+    return (
+        a.label.lower() in _T29_BESIDE_OBJECTS
+        and b.label.lower() in _T29_BESIDE_OBJECTS
+        and _aabb_overlap_xy(a, b) <= 0.05 * min(_aabb_area_xy(a), _aabb_area_xy(b))
+    )
+
+
 @register_instantiator("T29")
 def _instantiate_T29(spec, scene_ctx, rng):
     objs = _candidate_objects(scene_ctx)
@@ -800,20 +1172,19 @@ def _instantiate_T29(spec, scene_ctx, rng):
     pairs = []
     for i, a in enumerate(objs):
         for b in objs[i+1:]:
-            ov = _aabb_overlap_xy(a, b)
-            if ov <= 0:
-                continue
             # vertical relationship
-            if abs(a.bmax[2] - b.bmin[2]) < 0.08:
-                pairs.append((a, b, "resting_on"))         # a on top of b? no: a's top touches b's bottom → b on a
-            elif abs(b.bmax[2] - a.bmin[2]) < 0.08:
-                pairs.append((a, b, "resting_on"))         # a resting on b
-            elif abs(a.bmin[2] - b.bmin[2]) < 0.10:
+            ov = _aabb_overlap_xy(a, b)
+            if ov > 0.01 and abs(a.bmax[2] - b.bmin[2]) < 0.08 and _t29_can_rest_on(b, a):
+                pairs.append((b, a, "resting_on"))         # b's bottom ≈ a's top → b resting on a
+            elif ov > 0.01 and abs(b.bmax[2] - a.bmin[2]) < 0.08 and _t29_can_rest_on(a, b):
+                pairs.append((a, b, "resting_on"))         # a's bottom ≈ b's top → a resting on b
+            elif _aabb_gap_xy(a, b) <= 0.20 and abs(a.bmin[2] - b.bmin[2]) < 0.10 and _t29_can_be_beside(a, b):
                 pairs.append((a, b, "beside"))             # share floor level
     if not pairs:
         raise SceneRequirementUnmet(
-            "T29 needs two AABBs with XY overlap and ≤8 cm vertical gap; "
-            "no such pair in this scene."
+            "T29 needs a physically plausible support/contact pair: either a "
+            "small supported object on a known support surface, or two plausible "
+            "floor objects beside each other."
         )
     rng.shuffle(pairs)
     a, b, rel = pairs[0]
@@ -888,8 +1259,13 @@ def _instantiate_T32(spec, scene_ctx, rng):
                         portal_anchor = p; break
                 if portal_anchor is None:
                     continue
+                all_rooms = list(g.keys())
+                def _rname(rid):
+                    idx = all_rooms.index(rid) if rid in all_rooms else 0
+                    return _infer_room_name(scene_ctx, rid, idx)
                 return {
-                    "start_room": start, "end_room": end, "excluded_room": excl,
+                    "start_room": _rname(start), "end_room": _rname(end),
+                    "excluded_room": _rname(excl),
                     "portal_0_id": portal_anchor["id"],
                     "portal_0_proxy_id": portal_anchor["id"],
                     "portal_0_plane": "vertical",
@@ -923,6 +1299,12 @@ def _instantiate_T33(spec, scene_ctx, rng):
     agent = rng.choice(list(_AGENT_WIDTHS.keys()))
     threshold = _AGENT_WIDTHS[agent]
     gt = "yes" if p["width"] >= threshold + 0.05 else "no"
+    all_room_ids = scene_ctx.room_ids()
+    room_b_raw = p.get("room_b", "")
+    room_b_display = (
+        _infer_room_name(scene_ctx, room_b_raw, all_room_ids.index(room_b_raw))
+        if room_b_raw in all_room_ids else str(room_b_raw)
+    )
     return {
         "passage_id": p["id"], "passage_proxy_id": p["id"],
         "passage_plane": "vertical",
@@ -930,7 +1312,7 @@ def _instantiate_T33(spec, scene_ctx, rng):
         "side_a_label":  p.get("room_a", "side A"),
         "side_b_label":  p.get("room_b", "side B"),
         "agent_type":    agent,
-        "room_b_name":   p.get("room_b", "the other room"),
+        "room_b_name":   room_b_display,
         "passage_width": float(p["width"]),
         "agent_width":   threshold,
         "gt_answer":     gt,
@@ -953,13 +1335,18 @@ def _instantiate_T24_real(spec, scene_ctx, rng):
     # Direction from room_a centre → portal centre, in world XY
     rooms = scene_ctx.room_ids()
     bearing = "ahead"   # default placeholder; orientation depends on init yaw chosen later
+    room_b_raw = p["room_b"]
+    room_b_display = (
+        _infer_room_name(scene_ctx, room_b_raw, rooms.index(room_b_raw))
+        if room_b_raw in rooms else str(room_b_raw)
+    )
     return {
         "portal_id": p["id"],
         "portal_proxy_id": p["id"],
         "portal_plane": p["id"],
         "room_a_id": p["room_a"],
         "room_b_id": p["room_b"],
-        "room_b_name": p["room_b"],
+        "room_b_name": room_b_display,
         "gt_answer": bearing,
         "choices": ["left", "right", "ahead", "behind"],
     }
@@ -1004,7 +1391,9 @@ class TemplateActiveGenerator(BaseAPLGenerator):
                               ) -> List[APLActiveTaskItem]:
         # Seed per-template so the RNG state for T18 doesn't depend on how many
         # attempts T17 used (fixing T17 previously broke T18 via shared state).
-        self._rng.seed(self._base_seed ^ (hash(template_id) & 0x7FFF_FFFF))
+        digest = hashlib.blake2b(template_id.encode("utf-8"), digest_size=4).digest()
+        template_seed = int.from_bytes(digest, "big") & 0x7FFF_FFFF
+        self._rng.seed(self._base_seed ^ template_seed)
         spec = load_template(template_id)
         instantiator = INSTANTIATORS.get(template_id)
         if instantiator is None:
@@ -1095,12 +1484,44 @@ class TemplateActiveGenerator(BaseAPLGenerator):
         # 2. Sample an init_view that FAILS the slot predicates
         init_view = self._sample_failing_init(spec, task_instance)
         if init_view is None:
-            return None, "init_view_none"
+            diag = getattr(self, "_last_init_diag", {}) or {}
+            if diag.get("n_accepted", 0) == 0:
+                return None, "init_view_none"
+            return None, "init_below_threshold"
+
+        # T24 post-init GT fixup: the portal bearing depends on the actual
+        # init_view direction, so we recompute gt_answer here once init_view
+        # is known.  This overwrites the placeholder "ahead" set by the
+        # instantiator.
+        if spec.template_id == "T24":
+            portal_id = task_instance.get("portal_proxy_id") or task_instance.get("portal_id")
+            portal_centre = self.scene_ctx.get_object_centre(portal_id)
+            if portal_centre is not None:
+                cp = np.asarray(init_view.position, dtype=float)
+                ct = np.asarray(init_view.target, dtype=float)
+                fw = ct - cp
+                fw /= np.linalg.norm(fw) + 1e-9
+                d = portal_centre - cp
+                d /= np.linalg.norm(d) + 1e-9
+                fx, fy, dx, dy = fw[0], fw[1], d[0], d[1]
+                cross = fx * dy - fy * dx
+                dot = float(np.clip(fx * dx + fy * dy, -1.0, 1.0))
+                yaw_deg = math.degrees(math.acos(dot))
+                if cross < 0:
+                    yaw_deg = -yaw_deg
+                if abs(yaw_deg) <= 30:
+                    task_instance["gt_answer"] = "ahead"
+                elif abs(yaw_deg) >= 150:
+                    task_instance["gt_answer"] = "behind"
+                elif yaw_deg > 0:
+                    task_instance["gt_answer"] = "right"
+                else:
+                    task_instance["gt_answer"] = "left"
 
         # 3. Run expert beam search
-        expert = find_expert_trajectory(
+        expert = find_robust_expert_trajectory(
             spec, init_view, task_instance, self.scene_ctx,
-            max_steps=spec.max_steps, beam_width=8,
+            max_steps=spec.max_steps,
         )
         if not expert.found or not expert.actions:
             return None, "expert_not_found"
@@ -1111,9 +1532,17 @@ class TemplateActiveGenerator(BaseAPLGenerator):
         # even if it can't be in all regions simultaneously at the final frame.
         traj = [(np.asarray(v.position), np.asarray(v.target))
                 for v in expert.view_sequence]
-        coverage = compute_coverage(spec, traj, task_instance, self.scene_ctx,
-                                    submit_only=False)
-        score = float(coverage * (spec.gamma ** max(0, len(traj) - 1)))
+        submit_view_coverage = compute_coverage(
+            spec, traj[-1:] if traj else [], task_instance, self.scene_ctx,
+            submit_only=True,
+        )
+        trajectory_evidence_coverage = compute_coverage(
+            spec, traj, task_instance, self.scene_ctx, submit_only=False,
+        )
+        submit_only = getattr(spec, "coverage_mode", "submit") != "trajectory"
+        coverage = (
+            submit_view_coverage if submit_only else trajectory_evidence_coverage
+        )
 
         # 5. Authoritative choices via registry (overrides instantiator's
         #    ad-hoc list when YAML names a registered generator).  Must run
@@ -1126,12 +1555,20 @@ class TemplateActiveGenerator(BaseAPLGenerator):
             if registry_choices:
                 task_instance["choices"] = registry_choices
 
+        answer = str(task_instance.get("gt_answer", ""))
+        score = episode_score(
+            spec, traj, predicted_answer=answer, gt_answer=answer,
+            task_instance=task_instance, scene_ctx=self.scene_ctx,
+        )
+
         # 6. Question text (pick template + light render)
         question = self._render_question(spec, task_instance)
 
         # 6. Wrap as APLActiveTaskItem
-        choices = task_instance.get("choices") or []
-        answer = str(task_instance.get("gt_answer", ""))
+        choices = list(task_instance.get("choices") or [])
+        if choices:
+            self._rng.shuffle(choices)
+            task_instance["choices"] = choices
         answer_choice = None
         if choices and answer in choices:
             answer_choice = chr(ord("A") + choices.index(answer))
@@ -1158,6 +1595,9 @@ class TemplateActiveGenerator(BaseAPLGenerator):
             metadata={
                 "task_instance": {k: (v.tolist() if isinstance(v, np.ndarray) else v)
                                    for k, v in task_instance.items()},
+                "coverage_semantics": (
+                    "submit_final" if submit_only else "trajectory_memory"
+                ),
             },
             template_id=spec.template_id,
             subclass=spec.subclass,
@@ -1170,10 +1610,14 @@ class TemplateActiveGenerator(BaseAPLGenerator):
                     } for s in spec.evidence_slots
                 ],
                 "min_coverage_for_credit": spec.min_coverage_for_credit,
+                "coverage_mode": spec.coverage_mode,
                 "gamma": spec.gamma,
             },
             expert_trajectory=list(expert.view_sequence),
             coverage=float(coverage),
+            submit_view_coverage=float(submit_view_coverage),
+            trajectory_evidence_coverage=float(trajectory_evidence_coverage),
+            trajectory_reliability=dict(getattr(expert, "diagnostics", {}) or {}),
             score=float(score),
             min_steps=int(len(expert.actions)),
         )
@@ -1182,66 +1626,196 @@ class TemplateActiveGenerator(BaseAPLGenerator):
     # ------------------------------------------------------------------
     # init_view sampler: must FAIL slot predicates
     # ------------------------------------------------------------------
+    # NOTE: a local ``_expand_pattern_slots`` used to live here and was a
+    # duplicate of ``evaluation.template_spec.expand_evidence_slots``.  It
+    # had no callers and has been removed; use the canonical helper.
 
-    def _expand_pattern_slots(
-        self, pattern: Dict[str, Any], task_instance: Dict[str, Any]
-    ) -> List[EvidenceSlot]:
-        """Expand an `evidence_slot_pattern` block (T06/T26/T32) into N concrete
-        EvidenceSlot objects. N = task_instance['num_evidence_slots'] if set,
-        otherwise inferred from keys like '<prefix>_0_id', '<prefix>_1_id', ...
-        Substitutes the literal `{i}` token (no braces around it) in slot_id,
-        region_args values, and predicate args values.
-        """
-        from ...evaluation.template_spec import EvidenceSlot, PredicateSpec
-        # Infer N.
-        slot_id_tmpl = str(pattern.get("slot_id", "slot_{i}"))
-        prefix = slot_id_tmpl.replace("{i}", "")
-        n = int(task_instance.get("num_evidence_slots", 0) or 0)
-        if n <= 0:
-            n = 0
-            while f"{prefix}{n}_id" in task_instance:
-                n += 1
-            if n == 0:
-                n = 1  # default to one slot if instantiator only set one binding
-        slots: List[EvidenceSlot] = []
+    def _resolve_init_value(self, value: Any, task_instance: Dict[str, Any]) -> Any:
+        if isinstance(value, str):
+            s = value.strip()
+            if s.startswith("{{") and s.endswith("}}"):
+                return task_instance.get(s[2:-2].strip())
+            return task_instance.get(s, value)
+        if isinstance(value, list):
+            return [self._resolve_init_value(v, task_instance) for v in value]
+        return value
 
-        def _sub_i(value, i: int):
-            if isinstance(value, str):
-                return value.replace("{i}", str(i))
-            if isinstance(value, dict):
-                return {k: _sub_i(v, i) for k, v in value.items()}
-            if isinstance(value, list):
-                return [_sub_i(v, i) for v in value]
-            return value
+    def _infer_init_anchor_specs(self, spec: TemplateSpec,
+                                 task_instance: Dict[str, Any]) -> List[Any]:
+        cfg = getattr(spec, "init_view", {}) or {}
+        explicit = cfg.get("visible_anchors") or cfg.get("anchors")
+        if explicit:
+            vals = self._resolve_init_value(explicit, task_instance)
+            return vals if isinstance(vals, list) else [vals]
 
-        for i in range(n):
-            slot_id = slot_id_tmpl.replace("{i}", str(i))
-            region_args = _sub_i(pattern.get("region_args", {}) or {}, i)
-            preds_raw = _sub_i(pattern.get("predicates", []) or [], i)
-            preds = [PredicateSpec(name=p["name"], args=p.get("args", {}))
-                     for p in preds_raw]
-            slots.append(EvidenceSlot(
-                slot_id=slot_id,
-                region_generator=pattern.get("region_generator", ""),
-                region_args=region_args,
-                predicates=preds,
-                threshold=float(pattern.get("threshold", 1.0)),
-                tier2_override=pattern.get("tier2_override"),
-            ))
-        return slots
+        tid = spec.template_id
+        ti = task_instance
+        if tid == "T04":
+            return [[ti.get("obj_a_id"), ti.get("obj_b_id")]]
+        if tid == "T05":
+            return [ti.get("subject_id")]
+        if tid == "T08":
+            return [ti.get("group_ids") or ti.get("group_centroid_proxy")]
+        if tid == "T11":
+            return [ti.get("group_centroid_proxy") or ti.get("member_id")]
+        if tid == "T13":
+            return [[ti.get("front_id"), ti.get("back_id")]]
+        if tid in ("T17", "T18", "T19"):
+            return [ti.get("target_id") or ti.get("hidden_region") or ti.get("occluder_id")]
+        if tid == "T21":
+            return [[ti.get("obj_a_id"), ti.get("obj_b_id"), ti.get("reference_id")]]
+        if tid == "T26":
+            return [[ti.get("occluder_id"), ti.get("hidden_instance_0_id")]]
+        if tid == "T27":
+            ids = ti.get("target_ids") or ti.get("zone_targets") or []
+            return [ids[0]] if ids else []
+        if tid == "T29":
+            return [[ti.get("obj_a_id"), ti.get("obj_b_id")]]
+        for key in (
+            "target_id", "subject_id", "obj_a_id", "occluder_id",
+            "portal_id", "portal_0_id", "passage_id", "bottleneck_0_id",
+        ):
+            val = ti.get(key)
+            if val:
+                return [val]
+        return []
+
+    def _point_for_anchor(self, anchor: Any) -> Optional[np.ndarray]:
+        if anchor is None or anchor == "":
+            return None
+        if isinstance(anchor, (list, tuple)):
+            if anchor and all(isinstance(x, (int, float)) for x in anchor):
+                arr = np.asarray(anchor, dtype=float)
+                return arr if arr.size >= 3 else None
+            pts = [self._point_for_anchor(a) for a in anchor]
+            pts = [p for p in pts if p is not None]
+            return np.mean(np.stack(pts), axis=0) if pts else None
+        if isinstance(anchor, np.ndarray):
+            arr = np.asarray(anchor, dtype=float)
+            return arr if arr.size >= 3 else None
+        try:
+            c = self.scene_ctx.get_object_centre(anchor)
+            if c is not None:
+                return np.asarray(c, dtype=float)
+        except Exception:
+            pass
+        try:
+            pd = self.scene_ctx._portal_dict(anchor)
+            if pd is not None and pd.get("position") is not None:
+                return np.asarray(pd.get("position"), dtype=float)
+        except Exception:
+            pass
+        return None
+
+    def _anchor_visible_relaxed(self, anchor: Any, cp: np.ndarray, ct: np.ndarray,
+                                hfov: float) -> bool:
+        if anchor is None or anchor == "":
+            return False
+        if isinstance(anchor, (list, tuple)) and not (
+            anchor and all(isinstance(x, (int, float)) for x in anchor)
+        ):
+            return any(self._anchor_visible_relaxed(a, cp, ct, hfov) for a in anchor)
+        if isinstance(anchor, (list, tuple, np.ndarray)):
+            p = self._point_for_anchor(anchor)
+            if p is None:
+                return False
+            f = np.asarray(ct, dtype=float) - np.asarray(cp, dtype=float)
+            d = p - np.asarray(cp, dtype=float)
+            if np.linalg.norm(f[:2]) < 1e-6 or np.linalg.norm(d[:2]) < 1e-6:
+                return False
+            f = f[:2] / (np.linalg.norm(f[:2]) + 1e-9)
+            d = d[:2] / (np.linalg.norm(d[:2]) + 1e-9)
+            ang = math.degrees(math.acos(float(np.clip(np.dot(f, d), -1.0, 1.0))))
+            return ang <= 0.5 * float(hfov)
+        try:
+            from ...evaluation.predicates import Visible
+            if Visible(cp, ct, hfov, self.scene_ctx,
+                       obj=anchor, min_corners=1, max_occ=0.95):
+                return True
+        except Exception:
+            pass
+        try:
+            _, in_frame = self.scene_ctx.project_aabb_corners(anchor, cp, ct)
+            return bool(in_frame.sum() > 0)
+        except Exception:
+            p = self._point_for_anchor(anchor)
+            return self._anchor_visible_relaxed(p, cp, ct, hfov) if p is not None else False
+
+    def _append_anchor_biased_positions(self, candidates: List[np.ndarray],
+                                        anchors: List[Any]) -> List[np.ndarray]:
+        pts = [self._point_for_anchor(a) for a in anchors]
+        pts = [p for p in pts if p is not None]
+        if not pts:
+            return candidates
+        scene_ctx = self.scene_ctx
+        out = list(candidates)
+        for p in pts[:2]:
+            base_z = 0.8
+            for r in (0.8, 1.2, 1.8, 2.6, 3.5):
+                for k in range(16):
+                    ang = 2.0 * math.pi * (k / 16.0)
+                    cp = np.array([p[0] + r * math.cos(ang),
+                                   p[1] + r * math.sin(ang),
+                                   base_z], dtype=float)
+                    try:
+                        if scene_ctx.is_position_valid(cp):
+                            out.append(cp)
+                    except Exception:
+                        continue
+        return out
 
     def _sample_failing_init(self, spec: TemplateSpec,
                              task_instance: Dict[str, Any]) -> Optional[ViewState]:
+        """Pick an init view that (a) is NOT a winning view at submit time, and
+        (b) maximizes "illusion score" so the question is actually challenging.
+
+        Algorithm
+        ---------
+        1. Sample ``n_pos`` candidate positions uniformly across all room
+           polygons.  At each position try ``yaws_per_pos`` random yaws.
+        2. For every (cp, ct) candidate compute three signals:
+
+           * ``n_strict``   — number of slots strictly satisfied
+             (``slot_satisfied_at``).
+           * ``n_relaxed``  — number of slots almost-satisfied
+             (``slot_almost_satisfied_at`` with relax_factor 0.5).  This is
+             the "objects in awareness" signal: half the predicates of a
+             slot pass, so the agent sees something relevant but not
+             enough to submit.
+           * ``validator_score`` — sum of per-trigger-field contributions
+             from the YAML ``trigger:`` block (see ``init_validators.py``).
+             Empty / unregistered today; populated per-template later.
+
+        3. Compose a total score:
+
+               score = base + 0.5 * (n_relaxed / n_total) + validator_score
+
+           where ``base = 1.0`` if the candidate is a valid "fails at
+           submit" view (``n_strict < n_total``) and the validator did NOT
+           hard-reject, otherwise the candidate is discarded.
+
+        4. Among accepted candidates keep the best.  If the best total
+           score is below ``INIT_MIN_TOTAL_SCORE`` (default 1.0, i.e. only
+           the base "fails strict" guarantee), return None — the scene
+           cannot host this template's intended init view.
+
+        Diagnostics
+        -----------
+        After the call ``self._last_init_diag`` carries a dict with the
+        accept/reject counts, the best score, and the validator
+        breakdown of the winning candidate.  ``trace_T05.py`` (and other
+        tracers) read this to explain why an init view was chosen or why
+        none was returned.
+        """
         from ...evaluation.template_spec import expand_evidence_slots
         from ...evaluation.region_generators import _sample_positions_in_poly
+        from ...evaluation.coverage import fraction_passed
+
         rs = np.random.RandomState(self._rng.randint(0, 2**31 - 1))
-        # In tight rooms a random yaw can accidentally satisfy the slot
-        # predicates (target ends up in FOV by chance).  Try multiple yaws
-        # per position before giving up.
+        # Sampling budget.  Matches the legacy 64x4 = 256 candidates so that
+        # adding the per-candidate scoring pass does not blow up the time per
+        # task.  Per-template validators can raise this when wired in.
         n_pos = 64
-        yaws_per_pos = 4
-        # Sample from ALL room polygons uniformly to avoid the global
-        # sample_positions_in_room bias (which fills mostly from room 0).
         scene_ctx = self.scene_ctx
         scene_ctx._ensure_room_index()
         polys = getattr(scene_ctx, "_room_polygons_by_id", {})
@@ -1250,31 +1824,127 @@ class TemplateActiveGenerator(BaseAPLGenerator):
             n_per_room = max(4, (n_pos + n_rooms - 1) // n_rooms)
             candidates = []
             for poly in polys.values():
-                candidates.extend(_sample_positions_in_poly(scene_ctx, poly, n_per_room, rs))
-        else:
-            candidates = scene_ctx.sample_positions_in_room(num_points=n_pos, rng=rs)
-        hfov = scene_ctx.default_hfov_deg()
-        # Use all effective slots (including pattern-expanded ones for T06/T26/T32)
-        eff_slots = expand_evidence_slots(spec, task_instance)
-        n_slots_total = len(eff_slots)
-        for cp in candidates:
-            for _ in range(yaws_per_pos):
-                yaw = self._rng.uniform(0.0, 2.0 * math.pi)
-                ct = cp + np.array([math.cos(yaw), math.sin(yaw), 0.0])
-                n_sat = sum(
-                    1 for slot in eff_slots
-                    if slot_satisfied_at(
-                        resolve_slot(slot, task_instance), cp, ct, hfov, scene_ctx
-                    )
+                candidates.extend(
+                    _sample_positions_in_poly(scene_ctx, poly, n_per_room, rs)
                 )
-                # Accept if NOT all slots are satisfied (coverage < 1.0).
-                # For single-slot templates this is identical to "slot fails".
-                # For sequential multi-slot tasks (e.g. T27 zone-counting) this
-                # allows init inside zone_a so the expert only needs to navigate
-                # to zone_b rather than crossing TWO room boundaries.
-                if n_sat < n_slots_total:
-                    return self._make_view(cp, ct)
-        return None
+        else:
+            candidates = scene_ctx.sample_positions_in_room(
+                num_points=n_pos, rng=rs,
+            )
+
+        hfov = scene_ctx.default_hfov_deg()
+        init_anchors = self._infer_init_anchor_specs(spec, task_instance)
+        if not init_anchors:
+            return None
+        candidates = self._append_anchor_biased_positions(candidates, init_anchors)
+        primary_anchor_point = None
+        for a in init_anchors:
+            primary_anchor_point = self._point_for_anchor(a)
+            if primary_anchor_point is not None:
+                break
+        if primary_anchor_point is None:
+            return None
+        eff_slots_raw = expand_evidence_slots(spec, task_instance)
+        # Resolve slot variable bindings once — saves O(n_pos * yaws * n_slots)
+        # repeated dict substitutions inside the inner loop.
+        eff_slots = [resolve_slot(s, task_instance) for s in eff_slots_raw]
+        n_total = len(eff_slots)
+        if n_total == 0:
+            return None  # nothing to fail — shouldn't happen for live templates
+
+        # Minimum total score required.  A candidate that ONLY satisfies the
+        # "fails strict" base condition scores exactly 1.0; that's the legacy
+        # floor.  Per-template validators will push this up as they are
+        # registered, which automatically tightens acceptance over time
+        # without further code changes here.
+        INIT_MIN_TOTAL_SCORE = 1.0
+
+        best_view: Optional[ViewState] = None
+        best_score: float = -math.inf
+        best_breakdown: Dict[str, float] = {}
+        n_examined = 0
+        n_winning_view = 0          # candidates that would have ALL slots satisfied
+        n_hard_rejected = 0         # rejected by a validator
+        n_anchor_rejected = 0       # rejected because no relevant anchor is visible
+        n_accepted = 0              # n_strict < n_total AND not hard-rejected
+
+        for cp in candidates:
+            d = np.asarray(primary_anchor_point, dtype=float) - np.asarray(cp, dtype=float)
+            if float(np.linalg.norm(d[:2])) < 1e-6:
+                continue
+            ct = np.asarray(primary_anchor_point, dtype=float).copy()
+            n_examined += 1
+
+            if not any(self._anchor_visible_relaxed(a, cp, ct, hfov) for a in init_anchors):
+                n_anchor_rejected += 1
+                continue
+
+            fracs = [
+                fraction_passed(s, cp, ct, hfov, scene_ctx)
+                for s in eff_slots
+            ]
+            n_strict = 0
+            for s, fr in zip(eff_slots, fracs):
+                if s.tier2_override:
+                    ok = slot_satisfied(
+                        s,
+                        trajectory=[(cp, ct)],
+                        task_instance=task_instance,
+                        scene_ctx=scene_ctx,
+                        hfov_deg=hfov,
+                        submit_only=True,
+                    )
+                else:
+                    ok = fr >= s.threshold
+                if ok:
+                    n_strict += 1
+            if n_strict >= n_total:
+                n_winning_view += 1
+                continue
+
+            passes, v_score, breakdown = score_init_view(
+                spec, task_instance, cp, ct, hfov, scene_ctx,
+            )
+            if not passes:
+                n_hard_rejected += 1
+                continue
+
+            n_relaxed = sum(
+                1 for s, fr in zip(eff_slots, fracs)
+                if fr >= s.threshold * 0.5
+            )
+
+            total = 1.0 + 0.5 * (n_relaxed / n_total) + v_score
+            n_accepted += 1
+
+            if total > best_score:
+                best_score = total
+                best_view = self._make_view(cp, ct)
+                best_breakdown = {
+                    "n_strict": float(n_strict),
+                    "n_relaxed": float(n_relaxed),
+                    "n_total": float(n_total),
+                    "validator_score": float(v_score),
+                    **{f"trigger.{k}": float(v) for k, v in breakdown.items()},
+                }
+
+                    # All slots strictly satisfied — this would be a winning
+
+        # Diagnostics: always stored, even on failure.
+        self._last_init_diag = {
+            "n_examined": n_examined,
+            "n_winning_view": n_winning_view,
+            "n_hard_rejected": n_hard_rejected,
+            "n_anchor_rejected": n_anchor_rejected,
+            "n_accepted": n_accepted,
+            "best_score": best_score if best_score > -math.inf else None,
+            "min_required": INIT_MIN_TOTAL_SCORE,
+            "best_breakdown": best_breakdown,
+        }
+
+        if best_view is None or best_score < INIT_MIN_TOTAL_SCORE:
+            return None
+        return best_view
 
     # ------------------------------------------------------------------
     # Question rendering
@@ -1305,4 +1975,34 @@ class TemplateActiveGenerator(BaseAPLGenerator):
         # Double-brace first (more specific), then single-brace.
         q = re.sub(r"\{\{\s*(\w+)\s*\}\}", _sub, q)
         q = re.sub(r"\{\s*(\w+)\s*\}", _sub, q)
-        return q.strip()
+        return self._postprocess_question(q.strip())
+
+    def _postprocess_question(self, q: str) -> str:
+        """Final text cleanup for clarity and grammatical consistency."""
+        if not q:
+            return q
+
+        # Avoid deictic "that" references that are ambiguous in static text.
+        q = re.sub(r"\bWhat type of object is that\?", "What type of object is shown here?", q, flags=re.IGNORECASE)
+        q = re.sub(r"\bIs that one\b", "Is the object", q, flags=re.IGNORECASE)
+        q = re.sub(r"\bIs that\b", "Is the object", q, flags=re.IGNORECASE)
+        q = re.sub(r"\bthat narrow\b", "the narrow", q, flags=re.IGNORECASE)
+
+        # Better wording for plural existential questions.
+        q = re.sub(
+            r"\bIs there\s+(?:a|an)\s+([A-Za-z][A-Za-z\-]*)\b",
+            lambda m: f"Are there any {m.group(1)}" if _looks_plural(m.group(1)) else m.group(0),
+            q,
+            flags=re.IGNORECASE,
+        )
+
+        # Fix indefinite article agreement for singular nouns.
+        def _fix_article(match):
+            noun = match.group(2)
+            if _looks_plural(noun):
+                return noun
+            article = "an" if noun[:1].lower() in "aeiou" else "a"
+            return f"{article} {noun}"
+
+        q = re.sub(r"\b(a|an)\s+([A-Za-z][A-Za-z\-]*)\b", _fix_article, q, flags=re.IGNORECASE)
+        return q

@@ -15,7 +15,6 @@ description: >
 
 question_templates:
   - "Is there a {target_label} behind the {occluder_label}?"
-  - "Is anything hidden behind the {occluder_label}?"
   - "Is there a {target_label} beside the {occluder_label} that you cannot see from here?"
 
 answer_type: binary
@@ -28,6 +27,9 @@ trigger:
   # At init_view: target must not be visible (occluded by occluder)
   target_invisible_at_init: true
   min_target_occlusion_at_init: 0.70
+
+init_view:
+  visible_anchors: ["{{target_id}}", "{{hidden_region}}", "{{occluder_id}}"]
 
 # ---------- Evidence slots ----------
 evidence_slots:

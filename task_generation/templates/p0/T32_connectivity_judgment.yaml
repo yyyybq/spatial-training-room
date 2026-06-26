@@ -29,6 +29,9 @@ trigger:
   min_rooms: 3
   path_portals_not_all_visible_at_init: true
 
+init_view:
+  visible_anchors: ["{{portal_0_id}}"]
+
 # ---------- Evidence slot PATTERN (one per portal on candidate path) ----------
 evidence_slot_pattern:
   slot_id: "portal_{i}_facing"
@@ -45,6 +48,7 @@ evidence_slot_pattern:
 
 # Allow 80% slot coverage for longer paths (e.g., 4-portal paths)
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 0.80
 
 scene_requirements:

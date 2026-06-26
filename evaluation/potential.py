@@ -104,12 +104,12 @@ def _round_state_key(view: ViewState, pos_step: float, ang_step_deg: float):
 
 
 _DEFAULT_ACTIONS = (
+    ActionPrimitive.TURN_LEFT,
+    ActionPrimitive.TURN_RIGHT,
     ActionPrimitive.MOVE_FORWARD,
     ActionPrimitive.MOVE_BACKWARD,
     ActionPrimitive.MOVE_LEFT,
     ActionPrimitive.MOVE_RIGHT,
-    ActionPrimitive.TURN_LEFT,
-    ActionPrimitive.TURN_RIGHT,
 )
 
 
@@ -172,13 +172,16 @@ def breadth_first_potential_search(
         except Exception:
             _slot_centroids.append(None)
 
-    def _check_slot_sat(view: ViewState, slot_idx: int) -> bool:
-        from .coverage import resolve_slot, slot_satisfied_at
-        resolved = resolve_slot(slots[slot_idx], task_instance)
-        return slot_satisfied_at(resolved,
-                                 np.asarray(view.position),
-                                 np.asarray(view.target),
-                                 hfov, scene_ctx)
+    def _check_slot_sat(view_seq: List[ViewState], slot_idx: int) -> bool:
+        from .coverage import slot_satisfied
+        traj = [
+            (np.asarray(v.position), np.asarray(v.target))
+            for v in view_seq
+        ]
+        return slot_satisfied(
+            slots[slot_idx], traj, task_instance, scene_ctx, hfov,
+            submit_only=False,
+        )
 
     def _prox_bonus(cam_pos_arr: np.ndarray, sat_mask_: frozenset) -> float:
         """Proximity bonus toward unsatisfied slot region centroids.
@@ -220,11 +223,42 @@ def breadth_first_potential_search(
         # toward remaining unsatisfied zones via predicate gradient + proximity.
         return cov_so_far * 4.0 + phi_rem + prox
 
+    def _style_bonus(prev_view: ViewState,
+                     next_view: ViewState,
+                     action: ActionPrimitive) -> float:
+        """Small tie-break shaping toward human-like motion style.
+
+        Keep this term much smaller than coverage/potential terms so it only
+        affects tie cases: prefer turn+forward over long strafe chains.
+        """
+        if action in (ActionPrimitive.TURN_LEFT, ActionPrimitive.TURN_RIGHT):
+            return 0.03
+        if action in (ActionPrimitive.MOVE_LEFT, ActionPrimitive.MOVE_RIGHT):
+            return -0.18
+        if action in (ActionPrimitive.MOVE_FORWARD, ActionPrimitive.MOVE_BACKWARD):
+            prev_p = np.asarray(prev_view.position, dtype=float)
+            prev_t = np.asarray(prev_view.target, dtype=float)
+            next_p = np.asarray(next_view.position, dtype=float)
+            move = next_p - prev_p
+            move_xy = move[:2]
+            move_n = float(np.linalg.norm(move_xy))
+            fwd = prev_t - prev_p
+            fwd_xy = fwd[:2]
+            fwd_n = float(np.linalg.norm(fwd_xy))
+            if move_n < 1e-8 or fwd_n < 1e-8:
+                return 0.0
+            cosv = float(np.dot(move_xy, fwd_xy) / (move_n * fwd_n))
+            if action == ActionPrimitive.MOVE_BACKWARD:
+                cosv = -cosv
+            # Reward alignment with current heading direction.
+            return 0.06 * max(0.0, cosv)
+        return 0.0
+
     # Compute which slots are already satisfied at init
     n_slots = len(slots)
     if n_slots > 0:
         init_sat = frozenset(
-            i for i in range(n_slots) if _check_slot_sat(init_view, i)
+            i for i in range(n_slots) if _check_slot_sat([init_view], i)
         )
     else:
         init_sat = frozenset()
@@ -254,16 +288,17 @@ def breadth_first_potential_search(
                 # Update cumulative slot satisfaction BEFORE scoring
                 # so phi_rem reflects progress toward REMAINING zones.
                 if n_slots > 0:
+                    next_views = views + [new_view]
                     new_sat = sat_mask | frozenset(
                         i for i in range(n_slots)
-                        if i not in sat_mask and _check_slot_sat(new_view, i)
+                        if i not in sat_mask and _check_slot_sat(next_views, i)
                     )
                 else:
                     new_sat = sat_mask
                 phi_new = _phi_remaining(new_view, new_sat)
                 prox_new = _prox_bonus(np.asarray(new_view.position), new_sat)
                 cov_new = len(new_sat) / max(n_slots, 1)
-                new_score = _beam_score(cov_new, phi_new, prox_new)
+                new_score = _beam_score(cov_new, phi_new, prox_new) + _style_bonus(cur, new_view, a)
                 new_visited = visited | {key}
                 candidates.append((
                     actions + [a],

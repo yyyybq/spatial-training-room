@@ -115,6 +115,32 @@ def slot_satisfied_at(
     return fraction_passed(slot, cam_pos, cam_target, hfov_deg, scene_ctx) >= slot.threshold
 
 
+def slot_almost_satisfied_at(
+    slot: EvidenceSlot,
+    cam_pos: np.ndarray,
+    cam_target: np.ndarray,
+    hfov_deg: float,
+    scene_ctx: SceneContext,
+    relax_factor: float = 0.5,
+) -> bool:
+    """Relaxed version of ``slot_satisfied_at`` used by init-view samplers.
+
+    The strict slot is satisfied when ``fraction_passed >= threshold``; the
+    relaxed version accepts ``fraction_passed >= threshold * relax_factor``.
+    For a 2-predicate slot with threshold 1.0 this means "at least one
+    predicate passes" — i.e., the agent's view has *some* relationship to
+    the slot's objects even though the slot itself does NOT count.
+
+    This signal lets init-view samplers prefer candidates where the question
+    objects are at least partially in awareness over candidates where the
+    agent is staring at an empty wall.
+    """
+    if not slot.predicates:
+        return False
+    bar = slot.threshold * float(relax_factor)
+    return fraction_passed(slot, cam_pos, cam_target, hfov_deg, scene_ctx) >= bar
+
+
 def slot_satisfied(
     slot: EvidenceSlot,
     trajectory: Sequence[Tuple[np.ndarray, np.ndarray]],

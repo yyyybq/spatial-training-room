@@ -84,11 +84,18 @@ def _generate_for_scene(
     template_id: Optional[str] = None,
 ) -> Dict[str, int]:
     """Run generation for a single scene, return counts per task type."""
-    from task_generation.apl_tasks.passive_generator import APLPassiveGenerator
-    from task_generation.apl_tasks.active_generator  import APLActiveGenerator
-    from task_generation.apl_tasks.template_active_generator import TemplateActiveGenerator
-    from task_generation.qa_tasks.qa_generator        import QAGenerator
-    from core.task_base import BaseTaskGenerator
+    try:
+        from .task_generation.apl_tasks.passive_generator import APLPassiveGenerator
+        from .task_generation.apl_tasks.active_generator import APLActiveGenerator
+        from .task_generation.apl_tasks.template_active_generator import TemplateActiveGenerator
+        from .task_generation.qa_tasks.qa_generator import QAGenerator
+    except ImportError:
+        # Support direct script execution from the repository root:
+        # ``python run_factory.py ...``.
+        from task_generation.apl_tasks.passive_generator import APLPassiveGenerator
+        from task_generation.apl_tasks.active_generator import APLActiveGenerator
+        from task_generation.apl_tasks.template_active_generator import TemplateActiveGenerator
+        from task_generation.qa_tasks.qa_generator import QAGenerator
 
     scene_name = Path(scene_path).name
     out_dir.mkdir(parents=True, exist_ok=True)

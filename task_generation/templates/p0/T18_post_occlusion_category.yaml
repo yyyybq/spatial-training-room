@@ -25,6 +25,9 @@ trigger:
   target_invisible_at_init: true
   min_target_occlusion_at_init: 0.70
 
+init_view:
+  visible_anchors: ["{{target_id}}", "{{occluder_id}}"]
+
 # ---------- Evidence slots ----------
 # Stricter than T17: need clear aspect + scale to identify category
 evidence_slots:

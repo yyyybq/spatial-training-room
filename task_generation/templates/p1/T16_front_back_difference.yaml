@@ -34,6 +34,9 @@ trigger:
   # At init_view: only one face is visible (front or back, not both)
   only_one_face_visible_at_init: true
 
+init_view:
+  visible_anchors: ["{{target_id}}"]
+
 # ---------- Evidence slots (DUAL) ----------
 evidence_slots:
   - slot_id: front_face_view
@@ -68,6 +71,7 @@ evidence_slots:
 
 # BOTH slots must be covered
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 1.0
 
 scene_requirements:

@@ -63,9 +63,10 @@ def episode_score(
     """
     if not _answers_equal(predicted_answer, gt_answer):
         return 0.0
-    # v3 anti-cheat: only the SUBMIT-TIME view counts toward coverage.
+    coverage_mode = getattr(template, "coverage_mode", "submit")
+    submit_only = coverage_mode != "trajectory"
     coverage = compute_coverage(template, trajectory, task_instance, scene_ctx,
-                                submit_only=True)
+                                submit_only=submit_only)
     min_cov = max(template.min_coverage_for_credit, 1e-9)
     cov_factor = min(1.0, coverage / min_cov)
     if cov_factor <= 0.0:

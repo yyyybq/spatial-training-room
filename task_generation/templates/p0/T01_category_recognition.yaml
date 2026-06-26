@@ -20,9 +20,8 @@ description: >
 
 # ---------- Question templates ----------
 question_templates:
-  - "What type of object is that?"
-  - "Is that a {choice_a} or a {choice_b}?"
-  - "What is the large object in front of you?"
+  - "What type is the central object?"
+  - "Is the central object {choice_a} or {choice_b}?"
 
 answer_type: categorical          # MC from choices generated at instantiation time
 answer_choices_generator: similar_aabb_labels
@@ -31,6 +30,9 @@ answer_choices_generator: similar_aabb_labels
 
 # ---------- GT source ----------
 gt_from: labels_json_label        # answer = target object's label field
+
+init_view:
+  visible_anchors: ["{{target_id}}"]
 
 # ---------- Evidence slots ----------
 evidence_slots:

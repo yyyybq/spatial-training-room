@@ -20,6 +20,8 @@ import argparse
 import importlib.util
 import json
 import math
+import re
+import textwrap
 import sys
 from pathlib import Path
 
@@ -51,10 +53,60 @@ from spatial_training_room.core.scene_context import SceneContext  # noqa: E402
 import spatial_training_room.core.scene_context_ext  # noqa: E402, F401  (patches SceneContext)
 
 # ---------------------------------------------------------------------------
+# Highlight colour palette (for objects mentioned in the question)
+# ---------------------------------------------------------------------------
+_HIGHLIGHT_COLORS = [
+    "#e05c00",   # deep orange  (subject / first object)
+    "#0080e0",   # vivid blue   (ref_b / second object)
+    "#00aa44",   # vivid green  (ref_c / third object)
+    "#cc00cc",   # magenta      (fourth object if any)
+    "#aaaa00",   # olive        (fifth object if any)
+]
+
+
+def _extract_highlighted_objects(task: dict, scene_ctx: SceneContext):
+    """
+    Return a list of (color, label, AABB_obj) for objects mentioned in the task.
+
+    Reads `metadata.task_instance` to find all *_id / *_label pairs,
+    then maps them to actual AABB objects in the scene.
+    """
+    instance = task.get("metadata", {}).get("task_instance", {})
+    if not instance:
+        return []
+
+    # Build id→obj lookup
+    obj_by_id = {o.id: o for o in scene_ctx.valid_objects}
+
+    # Collect (role, obj_id, label) triples in deterministic order
+    result = []
+    seen_ids: set[str] = set()
+
+    # Iterate keys in sorted order so roles come out consistently
+    id_keys = sorted(k for k in instance if k.endswith("_id"))
+    for id_key in id_keys:
+        obj_id = str(instance[id_key]) if instance[id_key] is not None else None
+        if obj_id is None or obj_id in seen_ids:
+            continue
+        # Find a label key: strip _id suffix, try *_label sibling
+        base = id_key[:-3]  # e.g. "subject", "ref_b", "obj_a"
+        label_key = base + "_label"
+        label = instance.get(label_key, obj_id)
+        obj = obj_by_id.get(obj_id)
+        if obj is None:
+            continue
+        seen_ids.add(obj_id)
+        color = _HIGHLIGHT_COLORS[len(result) % len(_HIGHLIGHT_COLORS)]
+        result.append((color, label, obj))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fov_polygon(pos, forward, hfov_deg=60.0, length=1.5, n=15):
+def _fov_polygon(pos, forward, hfov_deg=60.0, length=1.8, n=20):
     """Return (x, y) arrays for a FOV cone polygon (to fill)."""
     half = math.radians(hfov_deg / 2.0)
     base_ang = math.atan2(forward[1], forward[0])
@@ -64,7 +116,7 @@ def _fov_polygon(pos, forward, hfov_deg=60.0, length=1.5, n=15):
     return xs, ys
 
 
-def _draw_arrow(ax, pos, forward, color, scale=0.4, lw=1.5):
+def _draw_arrow(ax, pos, forward, color, scale=0.55, lw=2.0):
     ax.annotate(
         "",
         xy=(pos[0] + forward[0] * scale, pos[1] + forward[1] * scale),
@@ -73,8 +125,12 @@ def _draw_arrow(ax, pos, forward, color, scale=0.4, lw=1.5):
     )
 
 
-def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes):
-    """Draw a single task onto ax."""
+def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes,
+                   highlight_objs: list):
+    """Draw a single task onto ax.  highlight_objs: list of (color, label, AABB)."""
+
+    # Build set of highlighted object ids for quick lookup
+    highlight_ids = {str(o.id) for _, _, o in highlight_objs}
 
     # ---- 1. Room polygons ------------------------------------------------
     scene_ctx._ensure_room_index()
@@ -84,7 +140,6 @@ def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes):
     for idx, rid in enumerate(room_ids):
         if polys:
             raw = polys[rid]
-            # may be numpy array or shapely polygon
             if hasattr(raw, "exterior"):
                 poly = np.array(raw.exterior.coords)
             else:
@@ -93,45 +148,69 @@ def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes):
             continue
         patch = mpatches.Polygon(poly[:, :2], closed=True,
                                  facecolor=colors_room[idx], edgecolor="gray",
-                                 linewidth=0.8, alpha=0.55, zorder=1)
+                                 linewidth=1.0, alpha=0.55, zorder=1)
         ax.add_patch(patch)
         cx, cy = poly[:, 0].mean(), poly[:, 1].mean()
         ax.text(cx, cy, str(rid), ha="center", va="center",
-                fontsize=6, color="gray", zorder=5)
+                fontsize=9, color="#666", fontweight="bold", zorder=5)
 
-    # ---- 2. Object AABBs -------------------------------------------------
+    # ---- 2a. Normal (non-highlighted) object AABBs -----------------------
     for obj in scene_ctx.valid_objects:
+        if str(obj.id) in highlight_ids:
+            continue
         center = 0.5 * (np.asarray(obj.bmin) + np.asarray(obj.bmax))
-        size = np.asarray(obj.bmax) - np.asarray(obj.bmin)
-        w, h = float(size[0]), float(size[1])
+        size   = np.asarray(obj.bmax) - np.asarray(obj.bmin)
+        w, h   = float(size[0]), float(size[1])
         rect = mpatches.FancyBboxPatch(
             (center[0] - w / 2, center[1] - h / 2), w, h,
             boxstyle="round,pad=0.02",
-            facecolor="lightyellow", edgecolor="#bbb", linewidth=0.5,
-            alpha=0.7, zorder=2,
+            facecolor="lightyellow", edgecolor="#ccc", linewidth=0.6,
+            alpha=0.65, zorder=2,
         )
         ax.add_patch(rect)
         ax.text(center[0], center[1], obj.label, ha="center", va="center",
-                fontsize=4.5, color="#555", zorder=6)
+                fontsize=6.5, color="#777", zorder=6)
+
+    # ---- 2b. Highlighted objects (drawn on top with bold borders) --------
+    for color, label, obj in highlight_objs:
+        center = 0.5 * (np.asarray(obj.bmin) + np.asarray(obj.bmax))
+        size   = np.asarray(obj.bmax) - np.asarray(obj.bmin)
+        w, h   = float(size[0]), float(size[1])
+        # filled box
+        rect = mpatches.FancyBboxPatch(
+            (center[0] - w / 2, center[1] - h / 2), w, h,
+            boxstyle="round,pad=0.04",
+            facecolor=color, edgecolor=color, linewidth=2.5,
+            alpha=0.30, zorder=3,
+        )
+        ax.add_patch(rect)
+        # border ring (solid, opaque)
+        border = mpatches.FancyBboxPatch(
+            (center[0] - w / 2, center[1] - h / 2), w, h,
+            boxstyle="round,pad=0.04",
+            facecolor="none", edgecolor=color, linewidth=2.5,
+            alpha=1.0, zorder=4,
+        )
+        ax.add_patch(border)
+        # label above the box
+        ax.text(center[0], center[1] + h / 2 + 0.12, label,
+                ha="center", va="bottom",
+                fontsize=8.5, color=color, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
+                          edgecolor=color, linewidth=1.2, alpha=0.85),
+                zorder=11)
 
     # ---- 3. Expert trajectory --------------------------------------------
     traj = task.get("expert_trajectory", [])
     if traj:
         xs = [v["position"][0] for v in traj]
         ys = [v["position"][1] for v in traj]
-        ax.plot(xs, ys, "-", color="royalblue", linewidth=1.2, zorder=8,
-                alpha=0.7, label="trajectory")
+        ax.plot(xs, ys, "-", color="royalblue", linewidth=1.6, zorder=8,
+                alpha=0.75, label="trajectory")
         for i, v in enumerate(traj):
             pos = np.array(v["position"])
-            tgt = np.array(v["target"])
-            fwd = tgt - pos
-            fn  = np.linalg.norm(fwd[:2])
-            if fn > 1e-6:
-                fwd = fwd[:2] / fn
-            else:
-                fwd = np.array([1.0, 0.0])
-            alpha = 0.3 + 0.7 * (i / max(len(traj) - 1, 1))
-            ax.scatter(pos[0], pos[1], s=14, color="royalblue",
+            alpha = 0.35 + 0.65 * (i / max(len(traj) - 1, 1))
+            ax.scatter(pos[0], pos[1], s=22, color="royalblue",
                        alpha=alpha, zorder=9)
 
     # ---- 4. Init view ----------------------------------------------------
@@ -141,13 +220,13 @@ def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes):
     fwd_i = tgt_i[:2] - pos_i[:2]
     fn = np.linalg.norm(fwd_i)
     fwd_i = fwd_i / fn if fn > 1e-6 else np.array([1.0, 0.0])
-    fx, fy = _fov_polygon(pos_i[:2], fwd_i, hfov_deg=60.0, length=1.2)
-    ax.fill(fx, fy, color="green", alpha=0.18, zorder=7)
-    ax.scatter(pos_i[0], pos_i[1], s=60, color="green",
+    fx, fy = _fov_polygon(pos_i[:2], fwd_i, hfov_deg=60.0, length=1.5)
+    ax.fill(fx, fy, color="green", alpha=0.20, zorder=7)
+    ax.scatter(pos_i[0], pos_i[1], s=90, color="green",
                marker="o", zorder=10, label="init")
-    _draw_arrow(ax, pos_i[:2], fwd_i, "green", scale=0.5)
+    _draw_arrow(ax, pos_i[:2], fwd_i, "green")
 
-    # ---- 5. Target view (first slot) ------------------------------------
+    # ---- 5. Target view --------------------------------------------------
     tv = task.get("target_view", {})
     if tv:
         pos_t = np.array(tv.get("position", [0, 0, 0]))
@@ -155,74 +234,115 @@ def visualise_task(task: dict, scene_ctx: SceneContext, ax: plt.Axes):
         fwd_t = tgt_t[:2] - pos_t[:2]
         fn = np.linalg.norm(fwd_t)
         fwd_t = fwd_t / fn if fn > 1e-6 else np.array([1.0, 0.0])
-        fx2, fy2 = _fov_polygon(pos_t[:2], fwd_t, hfov_deg=60.0, length=1.2)
-        ax.fill(fx2, fy2, color="red", alpha=0.15, zorder=7)
-        ax.scatter(pos_t[0], pos_t[1], s=60, color="red",
+        fx2, fy2 = _fov_polygon(pos_t[:2], fwd_t, hfov_deg=60.0, length=1.5)
+        ax.fill(fx2, fy2, color="red", alpha=0.18, zorder=7)
+        ax.scatter(pos_t[0], pos_t[1], s=100, color="red",
                    marker="*", zorder=10, label="target")
-        _draw_arrow(ax, pos_t[:2], fwd_t, "red", scale=0.5)
+        _draw_arrow(ax, pos_t[:2], fwd_t, "red")
 
-    # ---- 6. Aesthetics ---------------------------------------------------
+    # ---- 6. Legend + aesthetics ------------------------------------------
+    legend_handles = [
+        mpatches.Patch(color="royalblue", alpha=0.7, label="trajectory"),
+        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="green",
+                   markersize=10, label="init"),
+        plt.Line2D([0], [0], marker="*", color="w", markerfacecolor="red",
+                   markersize=12, label="target"),
+    ]
+    for color, label, _ in highlight_objs:
+        legend_handles.append(
+            mpatches.Patch(facecolor=color, edgecolor=color, alpha=0.6, label=label)
+        )
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=8,
+              framealpha=0.85)
     ax.set_aspect("equal")
     ax.autoscale_view()
-    ax.legend(loc="upper right", fontsize=6)
     ax.set_axis_off()
 
 
 def render_task_page(task: dict, scene_ctx: SceneContext, out_path: Path,
                      task_idx: int):
     """Render one task to a PNG file."""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 7),
-                             gridspec_kw={"width_ratios": [3, 1]})
+    highlight_objs = _extract_highlighted_objects(task, scene_ctx)
+
+    # width_ratios [3,2]: map gets 60%, info panel gets 40% of the figure width
+    fig, axes = plt.subplots(1, 2, figsize=(22, 11),
+                             gridspec_kw={"width_ratios": [3, 2]})
     ax_map, ax_info = axes
 
-    visualise_task(task, scene_ctx, ax_map)
+    visualise_task(task, scene_ctx, ax_map, highlight_objs)
 
-    # Info panel
-    ax_info.axis("off")
-    lines = [
-        f"Task #{task_idx}",
-        f"Template: {task.get('template_id','?')}  ({task.get('subclass','?')})",
-        "",
-        f"Q: {task.get('question','?')}",
-        "",
-        f"A: {task.get('answer','?')}",
-        "",
-        f"Steps : {task.get('num_steps','?')}",
-        f"Score : {task.get('score','?'):.3f}" if isinstance(task.get('score'), float) else f"Score : {task.get('score','?')}",
-        f"Cov   : {task.get('coverage','?'):.3f}" if isinstance(task.get('coverage'), float) else f"Cov   : {task.get('coverage','?')}",
+    # ---- Info panel: fill the whole axes with a coloured background ------
+    ax_info.set_facecolor("#fefce8")          # light-yellow fill for whole panel
+    for sp in ax_info.spines.values():
+        sp.set_edgecolor("#bbb")
+        sp.set_linewidth(1.5)
+    ax_info.set_xticks([])
+    ax_info.set_yticks([])
+
+    score_s = f"{task['score']:.3f}" if isinstance(task.get("score"), float) else str(task.get("score", "?"))
+    cov_s   = f"{task['coverage']:.3f}" if isinstance(task.get("coverage"), float) else str(task.get("coverage", "?"))
+
+    # Build (text, fontsize, weight, color) rows
+    q_lines = textwrap.wrap(task.get("question", "?"), width=32)
+    rows = [
+        (f"Task #{task_idx}", 15, "bold", "#222"),
+        (f"Template: {task.get('template_id','?')}  ({task.get('subclass','?')})",
+         13, "normal", "#555"),
+        ("─" * 36, 11, "normal", "#bbb"),
     ]
-    # Choices
+    rows.append(("Q:", 13, "bold", "#111"))
+    for ql in q_lines:
+        rows.append(("  " + ql, 13, "normal", "#111"))
+    rows.append(("", 6, "normal", "#000"))
+    rows.append((f"A:  {task.get('answer','?')}", 14, "bold", "#b00000"))
+    rows.append(("─" * 36, 11, "normal", "#bbb"))
+    rows.append((f"Steps : {task.get('num_steps','?')}", 13, "normal", "#333"))
+    rows.append((f"Score : {score_s}", 13, "normal", "#333"))
+    rows.append((f"Cov   : {cov_s}", 13, "normal", "#333"))
+
     choices = task.get("choices", [])
     if choices:
-        lines.append("")
-        lines.append("Choices:")
+        rows.append(("─" * 36, 11, "normal", "#bbb"))
+        rows.append(("Choices:", 13, "bold", "#333"))
         for c in choices:
-            marker = "✓" if str(c) == str(task.get("answer", "")) else " "
-            lines.append(f"  [{marker}] {c}")
-    # Actions
+            is_ans = str(c) == str(task.get("answer", ""))
+            marker = "✓" if is_ans else " "
+            col = "#007700" if is_ans else "#555"
+            rows.append((f"  [{marker}] {c}", 13, "normal", col))
+
     acts = task.get("action_descriptions", task.get("action_sequence", []))
     if acts:
-        lines.append("")
-        lines.append("Actions:")
-        for a in acts[:20]:
-            lines.append(f"  {a}")
-        if len(acts) > 20:
-            lines.append(f"  ... (+{len(acts)-20} more)")
+        rows.append(("─" * 36, 11, "normal", "#bbb"))
+        rows.append(("Actions:", 13, "bold", "#333"))
+        for a in acts[:22]:
+            rows.append((f"  {a}", 12, "normal", "#444"))
+        if len(acts) > 22:
+            rows.append((f"  … +{len(acts)-22} more", 11, "normal", "#888"))
 
-    text = "\n".join(lines)
-    ax_info.text(
-        0.02, 0.98, text,
-        transform=ax_info.transAxes,
-        va="top", ha="left",
-        fontsize=8,
-        fontfamily="monospace",
-        wrap=True,
-        bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8),
-    )
+    # Draw lines top→bottom, estimating y-step from font size.
+    # axes height ≈ 10 inches (figsize=22×11 minus padding); 72 pt/inch
+    # one line ≈ fs * 1.35 pt; normalised: fs*1.35 / (10*72) = fs/533
+    AXES_H_PT = 10.0 * 72   # approximate
+    y = 0.975
+    for (txt, fs, weight, color) in rows:
+        if txt == "":
+            y -= fs / AXES_H_PT          # blank gap proportional to requested fs
+            continue
+        ax_info.text(0.04, y, txt,
+                     transform=ax_info.transAxes,
+                     va="top", ha="left",
+                     fontsize=fs, fontfamily="monospace",
+                     fontweight=weight, color=color,
+                     clip_on=True)
+        n_sub = txt.count("\n") + 1
+        y -= fs * 1.45 * n_sub / AXES_H_PT
+        if y < 0.01:
+            break
 
-    fig.suptitle(task.get("question", ""), fontsize=10, y=0.99)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    q_short = textwrap.shorten(task.get("question", ""), width=95, placeholder="…")
+    fig.suptitle(q_short, fontsize=14, y=1.002, fontweight="bold")
+    fig.tight_layout(pad=0.8, rect=[0, 0, 1, 0.99])
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
     plt.close(fig)
 
 

@@ -1,17 +1,24 @@
 """
 evaluation/predicates.py
 
-Tier-1 predicate primitives (12 functions).
+Boolean predicate primitives used by YAML evidence slots and by
+``init_validators``.  All twelve predicates share the same signature::
 
-All predicates share the signature:
-
-    Predicate(cam_pos, cam_target, hfov_deg, scene_ctx, *, **kwargs) -> bool
+    predicate(cam_pos, cam_target, hfov_deg, scene_ctx, *, **kwargs) -> bool
 
 Where:
     cam_pos    : np.ndarray (3,)   — world-frame camera position
     cam_target : np.ndarray (3,)   — world-frame look-at target
     hfov_deg   : float             — horizontal field-of-view in degrees
     scene_ctx  : SceneContext (with scene_context_ext patches loaded)
+
+Naming
+------
+These are plain functions, not classes.  For new Python code prefer the
+snake_case names (``is_visible``, ``pair_visible``, ``bearing_within`` …).
+The original PascalCase names (``Visible``, ``PairVisible`` …) remain as
+backward-compatible aliases and are also accepted as YAML predicate names.
+Both name spellings are registered in ``PREDICATE_REGISTRY``.
 """
 from __future__ import annotations
 
@@ -226,19 +233,54 @@ def SideView(cam_pos, cam_target, hfov_deg, scene_ctx,
 # Registry
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# snake_case aliases (preferred for new Python code).
+# The PascalCase ``def``s above stay as the canonical definitions so that
+# existing call sites continue to work without churn.
+# ---------------------------------------------------------------------------
+
+is_visible          = Visible
+distance_band       = DistanceBand
+aspect_exposed      = AspectExposed
+is_centered         = Centered
+scale_band          = ScaleBand
+bearing_within      = BearingWithin
+in_room             = InRoom
+not_blocked_by      = NotBlockedBy
+orthogonal_to_plane = OrthogonalToPlane
+pair_visible        = PairVisible
+separation_on_image = SeparationOnImage
+side_view           = SideView
+
+# YAML predicate dispatch.  Both spellings are accepted so existing YAML
+# files keep working while new templates can use snake_case.
 PREDICATE_REGISTRY = {
-    "Visible":           Visible,
-    "DistanceBand":      DistanceBand,
-    "AspectExposed":     AspectExposed,
-    "Centered":          Centered,
-    "ScaleBand":         ScaleBand,
-    "BearingWithin":     BearingWithin,
-    "InRoom":            InRoom,
-    "NotBlockedBy":      NotBlockedBy,
-    "OrthogonalToPlane": OrthogonalToPlane,
-    "PairVisible":       PairVisible,
-    "SeparationOnImage": SeparationOnImage,
-    "SideView":          SideView,
+    # Canonical (snake_case) keys
+    "is_visible":          Visible,
+    "distance_band":       DistanceBand,
+    "aspect_exposed":      AspectExposed,
+    "is_centered":         Centered,
+    "scale_band":          ScaleBand,
+    "bearing_within":      BearingWithin,
+    "in_room":             InRoom,
+    "not_blocked_by":      NotBlockedBy,
+    "orthogonal_to_plane": OrthogonalToPlane,
+    "pair_visible":        PairVisible,
+    "separation_on_image": SeparationOnImage,
+    "side_view":           SideView,
+    # Legacy PascalCase aliases — keep until all YAML is migrated
+    "Visible":             Visible,
+    "DistanceBand":        DistanceBand,
+    "AspectExposed":       AspectExposed,
+    "Centered":            Centered,
+    "ScaleBand":           ScaleBand,
+    "BearingWithin":       BearingWithin,
+    "InRoom":              InRoom,
+    "NotBlockedBy":        NotBlockedBy,
+    "OrthogonalToPlane":   OrthogonalToPlane,
+    "PairVisible":         PairVisible,
+    "SeparationOnImage":   SeparationOnImage,
+    "SideView":            SideView,
 }
 
 

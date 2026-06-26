@@ -30,6 +30,9 @@ trigger:
   # At init: cannot clearly see the passage width orthogonally
   passage_not_orthogonally_visible_at_init: true
 
+init_view:
+  visible_anchors: ["{{passage_id}}"]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: orthogonal_passage_view

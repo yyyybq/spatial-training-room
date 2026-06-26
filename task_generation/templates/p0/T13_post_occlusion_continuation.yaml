@@ -28,6 +28,9 @@ trigger:
   # At init_view, back object must be substantially occluded by front
   min_init_occlusion_fraction: 0.50   # ≥ 50% of back obj's corners blocked
 
+init_view:
+  visible_anchors: [["{{front_id}}", "{{back_id}}"]]
+
 # ---------- Evidence slots ----------
 evidence_slots:
   - slot_id: unoccluded_side_view

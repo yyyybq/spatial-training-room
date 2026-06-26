@@ -16,9 +16,8 @@ description: >
   to measure the true opening width.
 
 question_templates:
-  - "Can the {target_label} pass through the gap between {left_label} and {right_label}?"
-  - "Will the {target_label} fit through that narrow passage?"
-  - "How much clearance does the {target_label} have at the narrowest point?"
+  - "Will the {target_label} fit through the narrow passage?"
+  - "Can the {target_label} pass through the doorway?"
 
 answer_type: binary                 # yes/no; set to ordinal for T06b variant
 answer_choices_generator: binary_yes_no
@@ -32,6 +31,9 @@ trigger:
   max_clearance_margin_m:  0.50
   # At init_view must NOT be directly facing bottleneck orthogonally
   # (ensured by generator placing init at far/oblique position)
+
+init_view:
+  visible_anchors: ["{{target_id}}"]
 
 # ---------- Evidence slot PATTERN (instantiated K times, one per bottleneck) ----------
 # The generator expands this pattern into slot_0, slot_1, … slot_{K-1}
@@ -54,6 +56,7 @@ evidence_slot_pattern:
 # Score credit given even if agent visits only 80% of bottleneck slots
 # (single-bottleneck tasks: min_coverage_for_credit = 1.0)
 coverage_aggregator: mean
+coverage_mode: trajectory
 min_coverage_for_credit: 0.80
 
 scene_requirements:
