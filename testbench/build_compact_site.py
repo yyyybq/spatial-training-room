@@ -1,5 +1,5 @@
 """
-build_compact_site.py  —  Generate a lightweight GitHub Pages review site.
+build_compact_site.py - Generate a lightweight GitHub Pages review site.
 
 Combines project introduction (hero, stats, template catalogue, validation)
 with rendered task examples (init/target/topdown images, Q&A, actions).
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from PIL import Image
 
-# ── template metadata ─────────────────────────────────────────────────────────
+# Template metadata.
 
 TMPL_META = {
     "T01": ("Appearance Discrimination",   "occlusion",   0.70,  8),
@@ -29,7 +29,7 @@ TMPL_META = {
     "T06": ("Passage Width Assessment",     "navigation",  0.74,  7),
     "T08": ("Configuration / Arrangement",  "spatial",     0.66,  9),
     "T11": ("Single vs. Multi Instance",    "counting",    0.95,  2),
-    "T13": ("Occlusion → Category",         "occlusion",   0.86,  4),
+    "T13": ("Occlusion to Category",        "occlusion",   0.86,  4),
     "T17": ("Occluded Object Existence",    "occlusion",   0.95,  2),
     "T18": ("Occluded Object Category",     "occlusion",   0.63, 10),
     "T19": ("Occluded Object Completeness", "occlusion",   0.77,  6),
@@ -52,7 +52,7 @@ CATEGORY_COLOR = {
     "cross-room":  ("#fff7ed", "#9a3412", "#fed7aa"),
 }
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# Helpers.
 
 def img_to_b64(path: Path, max_w: int = 480, quality: int = 65) -> str:
     with Image.open(path) as im:
@@ -85,7 +85,7 @@ def score_bar(score: float) -> str:
             f'<span>{score:.2f}</span></div>')
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# Main.
 
 def main():
     ap = argparse.ArgumentParser()
@@ -165,8 +165,8 @@ def main():
             idx = meta.get("task_index", 0)
             row = jsonl_by_idx.get(idx, {})
 
-            question = row.get("question", row.get("q", "—"))
-            answer   = row.get("gt_answer", row.get("answer", "—"))
+            question = row.get("question", row.get("q", "N/A"))
+            answer   = row.get("gt_answer", row.get("answer", "N/A"))
             choices  = row.get("choices", [])
             actions  = meta.get("action_descriptions", [])
             n_frames = meta.get("num_frames", "?")
@@ -210,9 +210,9 @@ def main():
     <div class="answer"><span class="alabel">A</span><span class="ans-text">{answer}</span></div>
   </div>
   <div class="frames-row">
-    {img_tag("init",    "① Init view — unanswerable")}
-    {img_tag("topdown", "② Top-down navigation path")}
-    {img_tag("target",  "③ Target view — answerable")}
+    {img_tag("init",    "1. Init view - unanswerable")}
+    {img_tag("topdown", "2. Top-down navigation path")}
+    {img_tag("target",  "3. Target view - answerable")}
   </div>
   {actions_html}
 </div>""")
@@ -250,7 +250,7 @@ def main():
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Spatial Training Room — APL Data Factory</title>
+<title>Spatial Training Room - APL Data Factory</title>
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
@@ -457,7 +457,7 @@ tbody tr:hover td{{background:#fafafa;}}
 
 <div class="topbar">
   <h1>Spatial Training Room</h1>
-  <span class="sub">{args.dataset_label} &nbsp;·&nbsp; {len(sections_html)} templates &nbsp;·&nbsp; {total_tasks} tasks &nbsp;·&nbsp; {total_images} images</span>
+  <span class="sub">{args.dataset_label} &nbsp;&middot;&nbsp; {len(sections_html)} templates &nbsp;&middot;&nbsp; {total_tasks} tasks &nbsp;&middot;&nbsp; {total_images} images</span>
 </div>
 
 <div class="layout">
@@ -480,7 +480,7 @@ tbody tr:hover td{{background:#fafafa;}}
       <div class="hero-stats">
         <div class="hstat"><div class="n">{len(sections_html)}</div><div class="l">Active Templates</div></div>
         <div class="hstat"><div class="n">{total_tasks}</div><div class="l">Generated Tasks</div></div>
-        <div class="hstat"><div class="n">0%</div><div class="l">Init Answerability ✓</div></div>
+        <div class="hstat"><div class="n">0%</div><div class="l">Init Answerability</div></div>
         <div class="hstat"><div class="n">100%</div><div class="l">Submit Coverage</div></div>
         <div class="hstat"><div class="n">{overall_score:.2f}</div><div class="l">Avg Expert Score</div></div>
       </div>
@@ -495,9 +495,9 @@ tbody tr:hover td{{background:#fafafa;}}
         <em>Active Perception Learning (APL)</em> training samples.
         Each sample is a 4D question:
         <code>(init_view, expert_action_sequence, target_view, question, answer)</code>.
-        The initial viewpoint is deliberately selected so the question is <strong>unanswerable</strong>—
+        The initial viewpoint is deliberately selected so the question is <strong>unanswerable</strong>:
         the agent must actively navigate (pan, tilt, translate) to gather sufficient visual evidence
-        before answering. The 19 active task templates cover spatial reasoning across occlusion,
+        before answering. The current release examples cover {len(sections_html)} task templates across occlusion,
         cross-room, counting, configuration, distance, and navigability.
         This page uses the <strong>waypoint-stitch</strong> expert trajectory batch:
         trajectory-memory tasks collect evidence across key views instead of requiring
@@ -508,20 +508,13 @@ tbody tr:hover td{{background:#fafafa;}}
 
     <!-- Validation -->
     <div id="validation">
-      <div class="section-h">Init-View Answerability Validation</div>
-      <div class="val-grid">
-        <div class="v-card"><div class="vt">T04</div><div class="vc">Actual size comparison</div><div class="vr">✔ 0 / 5</div></div>
-        <div class="v-card"><div class="vt">T08</div><div class="vc">Configuration / arrangement</div><div class="vr">✔ 0 / 5</div></div>
-        <div class="v-card"><div class="vt">T17</div><div class="vc">Occluded object existence</div><div class="vr">✔ 0 / 5</div></div>
-        <div class="v-card"><div class="vt">T23</div><div class="vc">Cross-room existence</div><div class="vr">✔ 0 / 5</div></div>
-        <div class="v-card"><div class="vt">T27</div><div class="vc">Zone counting</div><div class="vr">✔ 0 / 5</div></div>
-      </div>
+      <div class="section-h">Release Example Validation</div>
       <div class="val-sum">
-        <div class="big">0 / 25</div>
+        <div class="big">{total_tasks}</div>
         <p>
-          <strong>Init answerability = 0.0%</strong> across all 25 probe tasks (5 templates × 5 tasks).<br/>
-          Submit-time slot coverage evaluated at the initial frame only.
-          Current examples: <code>{args.dataset_label}</code>, avg steps {overall_steps:.1f}.
+          Current examples: <code>{args.dataset_label}</code> generated {total_tasks} tasks from
+          {len(sections_html)} release templates with average expert score {overall_score:.2f}
+          and average trajectory length {overall_steps:.1f} steps.
         </p>
       </div>
     </div>
@@ -541,12 +534,11 @@ tbody tr:hover td{{background:#fafafa;}}
     </div>
 
     <!-- Task Examples (per template) -->
-    <div class="section-h" style="margin-top:48px">Task Examples — All Templates</div>
+    <div class="section-h" style="margin-top:48px">Task Examples - Release Templates</div>
     <p style="font-size:.85em;color:var(--text2);margin-bottom:24px">
       Each card shows the <strong>question + answer</strong>, then three key views:
-      ① the init view the agent starts from (unanswerable),
-      ② the top-down trajectory map,
-      ③ the target view after navigation (answerable).
+      the init view the agent starts from (unanswerable), the top-down trajectory map,
+      and the target view after navigation (answerable).
       Expand "Expert actions" to see the full action sequence.
     </p>
 
@@ -558,6 +550,7 @@ tbody tr:hover td{{background:#fafafa;}}
 </body>
 </html>"""
 
+    html = "\n".join(line.rstrip() for line in html.splitlines()) + "\n"
     out_path.write_text(html, encoding="utf-8")
     size_mb = out_path.stat().st_size / 1e6
     print(f"[done] {out_path}  ({size_mb:.1f} MB)")
