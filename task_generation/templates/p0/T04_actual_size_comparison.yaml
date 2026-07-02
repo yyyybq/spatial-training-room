@@ -23,12 +23,12 @@ gt_from: aabb_volume_comparison        # larger AABB volume = correct answer
 
 # ---------- Trigger condition at instantiation time ----------
 # Generator only emits a task if:
-#   true_volume_ratio = vol_larger / vol_smaller  ≥  2.0
+#   true_volume_ratio = vol_larger / vol_smaller  ∈ [1.15, 1.5)
 #   AND at init_view  apparent_size_ratio ∈ [0.7, 1.4]  (looks similar or wrong)
 
 trigger:
-  min_true_volume_ratio: 2.0
-  max_true_volume_ratio: 4.0
+  min_true_volume_ratio: 1.15
+  max_true_volume_ratio: 1.5
   init_apparent_size_ratio_min: 0.7
   init_apparent_size_ratio_max: 1.4
 
@@ -61,7 +61,7 @@ min_coverage_for_credit: 1.0
 
 scene_requirements:
   min_objects: 2
-  needs_pair_with_volume_ratio: 2.0
+  needs_pair_with_volume_ratio: 1.15
 
 action_config:
   move_m: 0.5

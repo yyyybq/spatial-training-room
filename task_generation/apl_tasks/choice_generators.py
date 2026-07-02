@@ -84,6 +84,18 @@ def _pair_labels(ti, ctx, rng) -> List[str]:
     return [correct, other]
 
 
+@register_choice("pair_from_triple")
+def _pair_from_triple(ti, ctx, rng) -> List[str]:
+    # T05 uses one subject plus two reference objects; choices are the refs.
+    b_label = ti.get("ref_b_label")
+    c_label = ti.get("ref_c_label")
+    correct = ti.get("gt_answer")
+    if not (correct and b_label and c_label):
+        return []
+    other = c_label if correct == b_label else b_label
+    return [correct, other]
+
+
 @register_choice("similar_aabb_labels")
 def _similar_aabb_labels(ti, ctx, rng) -> List[str]:
     """Correct label + 2-3 other labels from the scene."""

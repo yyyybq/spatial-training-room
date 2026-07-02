@@ -129,6 +129,131 @@ def _looks_plural(noun: str) -> bool:
     return n.endswith("s")
 
 
+def _norm_label(label: str) -> str:
+    return (label or "").strip().lower().replace("_", " ")
+
+
+def _label_matches(label: str, names: set[str]) -> bool:
+    lab = _norm_label(label)
+    for name in names:
+        name = _norm_label(name)
+        if name == lab:
+            return True
+        if lab in {"table lamp", "floor lamp"} and name in {"table", "floor"}:
+            continue
+        if re.search(rf"(^|[\s/-]){re.escape(name)}($|[\s/-])", lab):
+            return True
+    return False
+
+
+_SEMANTIC_GROUPS = {
+    "flat_wall_visual": {
+        "decorative painting", "wall painting", "painting", "picture", "poster",
+        "photo", "frame", "window", "mirror", "tv", "television", "screen",
+        "curtain",
+    },
+    "storage": {
+        "cabinet", "wall cabinet", "basin cabinet", "shoe cabinet", "wardrobe",
+        "bookshelf", "bookcase", "shelf", "sideboard", "dresser",
+        "chest of drawers", "cupboard",
+    },
+    "seating": {"chair", "armchair", "stool", "bench", "ottoman", "sofa", "couch"},
+    "tables": {
+        "table", "desk", "coffee table", "dining table", "side table",
+        "nightstand", "bedside table",
+    },
+    "bedroom_large": {"bed", "wardrobe", "bedside table", "dresser"},
+    "plants_decor": {
+        "plant", "flowerpot", "flowers", "vase", "ornament", "trappings",
+        "candle", "candle combination", "tray",
+    },
+    "lighting": {"lamp", "table lamp", "floor lamp", "chandelier", "downlights"},
+    "appliances": {
+        "washing machine", "washing_machine", "refrigerator", "fridge",
+        "stove", "oven", "microwave",
+    },
+    "bathroom": {
+        "basin", "basin cabinet", "toilet", "bathtub", "shower",
+        "shower room partition", "shower head", "towel", "niche",
+    },
+    "small_objects": {
+        "book", "box", "bottle", "cup", "mug", "bowl", "plate", "pan", "pot",
+        "remote", "phone", "yarn",
+    },
+}
+
+
+_T01_APPEARANCE_GROUPS = {
+    "flat_wall_visual": _SEMANTIC_GROUPS["flat_wall_visual"],
+    "storage": _SEMANTIC_GROUPS["storage"],
+    "seating": _SEMANTIC_GROUPS["seating"],
+    "tables": _SEMANTIC_GROUPS["tables"],
+    "plants_decor": _SEMANTIC_GROUPS["plants_decor"],
+    "lighting": _SEMANTIC_GROUPS["lighting"],
+    "bathroom": _SEMANTIC_GROUPS["bathroom"],
+}
+
+
+def _groups_for_label(label: str, groups: dict[str, set[str]] = _SEMANTIC_GROUPS) -> set[str]:
+    return {
+        group_name
+        for group_name, names in groups.items()
+        if _label_matches(label, names)
+    }
+
+
+def _share_semantic_group(a_label: str, b_label: str, groups: dict[str, set[str]] = _SEMANTIC_GROUPS) -> bool:
+    return bool(_groups_for_label(a_label, groups) & _groups_for_label(b_label, groups))
+
+
+def _semantically_similar_labels(scene_ctx, label: str, *, groups: dict[str, set[str]], limit: int = 3) -> List[str]:
+    target_groups = _groups_for_label(label, groups)
+    if not target_groups:
+        return []
+    out: List[str] = []
+    for o in _candidate_objects(scene_ctx):
+        if _norm_label(o.label) == _norm_label(label) or o.label in out:
+            continue
+        if target_groups & _groups_for_label(o.label, groups):
+            out.append(o.label)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _valid_comparison_pair(a, b) -> bool:
+    """For questions where two answer choices should be naturally comparable."""
+    if _norm_label(a.label) == _norm_label(b.label):
+        return False
+    return _share_semantic_group(a.label, b.label)
+
+
+def _valid_distance_triple(subject, ref_b, ref_c) -> bool:
+    if not _valid_comparison_pair(ref_b, ref_c):
+        return False
+    subj_groups = _groups_for_label(subject.label)
+    ref_groups = _groups_for_label(ref_b.label) | _groups_for_label(ref_c.label)
+    if not subj_groups or not ref_groups:
+        return False
+    return bool(subj_groups & ref_groups) or _is_reference_landmark(subject)
+
+
+_REFERENCE_LANDMARK_LABELS = (
+    _SEMANTIC_GROUPS["storage"]
+    | _SEMANTIC_GROUPS["tables"]
+    | _SEMANTIC_GROUPS["seating"]
+    | _SEMANTIC_GROUPS["bedroom_large"]
+    | _SEMANTIC_GROUPS["bathroom"]
+    | {"door", "pillar", "partition", "window", "tv"}
+)
+
+
+def _is_reference_landmark(o) -> bool:
+    return _is_meaningful_object(o, min_volume=0.04) and (
+        _label_matches(o.label, _REFERENCE_LANDMARK_LABELS) or _volume(o) >= 0.12
+    )
+
+
 # Keyword sets for room name inference
 _ROOM_KEYWORDS: list = [
     ("master bedroom",  {"bed", "wardrobe", "dresser", "bedside table", "mirror", "closet"}),
@@ -225,7 +350,10 @@ _T01_CONFUSABLE_GROUPS = [
 def _labels_in_same_confusion_group(a_label: str, b_label: str) -> bool:
     a = a_label.lower()
     b = b_label.lower()
-    return any(a in group and b in group for group in _T01_CONFUSABLE_GROUPS)
+    return (
+        any(a in group and b in group for group in _T01_CONFUSABLE_GROUPS)
+        or _share_semantic_group(a_label, b_label, _T01_APPEARANCE_GROUPS)
+    )
 
 
 def _shape_similar(a, b, max_shape_dist: float = 0.18, max_volume_ratio: float = 2.5) -> bool:
@@ -239,15 +367,19 @@ def _shape_similar(a, b, max_shape_dist: float = 0.18, max_volume_ratio: float =
 
 
 def _t01_confusing_distractors(scene_ctx, target, limit: int = 3) -> List[str]:
+    semantic = _semantically_similar_labels(
+        scene_ctx, target.label, groups=_T01_APPEARANCE_GROUPS, limit=limit
+    )
+    if semantic:
+        return semantic
+
     distractors: List[tuple[float, str]] = []
     for other in _candidate_objects(scene_ctx):
         if other.id == target.id or other.label.lower() == target.label.lower():
             continue
-        semantic = _labels_in_same_confusion_group(target.label, other.label)
-        shape_ok = _shape_similar(target, other)
-        if not (semantic or shape_ok):
+        if not _labels_in_same_confusion_group(target.label, other.label):
             continue
-        score = _shape_distance(target, other) + (0.0 if semantic else 0.15)
+        score = _shape_distance(target, other)
         distractors.append((score, other.label))
     out: List[str] = []
     for _, label in sorted(distractors, key=lambda x: x[0]):
@@ -270,7 +402,11 @@ def _is_meaningful_object(o, min_volume: float = 0.02) -> bool:
 
 
 def _labels_semantically_close(a_label: str, b_label: str) -> bool:
-    return a_label.lower() == b_label.lower() or _labels_in_same_confusion_group(a_label, b_label)
+    return (
+        a_label.lower() == b_label.lower()
+        or _labels_in_same_confusion_group(a_label, b_label)
+        or _share_semantic_group(a_label, b_label)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -319,14 +455,14 @@ def _instantiate_T04(spec, scene_ctx, rng):
     if len(objs) < 2:
         return None
     rng.shuffle(objs)
-    min_vol_ratio = float(getattr(spec, "trigger", {}).get("min_true_volume_ratio", 2.0))
-    max_vol_ratio = float(getattr(spec, "trigger", {}).get("max_true_volume_ratio", 4.0))
+    min_vol_ratio = float(getattr(spec, "trigger", {}).get("min_true_volume_ratio", 1.15))
+    max_vol_ratio = float(getattr(spec, "trigger", {}).get("max_true_volume_ratio", 1.5))
     pairs = []
     for i, a in enumerate(objs):
         for b in objs[i + 1:]:
             if not _same_room(scene_ctx, a, b):
                 continue
-            if not (_labels_semantically_close(a.label, b.label) or _shape_similar(a, b, max_volume_ratio=max_vol_ratio)):
+            if not _labels_semantically_close(a.label, b.label):
                 continue
             pairs.append((a, b))
     rng.shuffle(pairs)
@@ -378,6 +514,12 @@ def _instantiate_T05(spec, scene_ctx, rng):
             # Require all three labels to be distinct to avoid degenerate questions
             if s.label == b.label or s.label == c.label or b.label == c.label:
                 continue
+            if not _is_meaningful_object(s, min_volume=0.03):
+                continue
+            if not (_is_meaningful_object(b, min_volume=0.03) and _is_meaningful_object(c, min_volume=0.03)):
+                continue
+            if not _valid_distance_triple(s, b, c):
+                continue
             cs = 0.5 * (s.bmin + s.bmax)
             cb = 0.5 * (b.bmin + b.bmax)
             cc = 0.5 * (c.bmin + c.bmax)
@@ -414,6 +556,8 @@ def _instantiate_T11(spec, scene_ctx, rng):
     for i, a in enumerate(objs):
         for b in objs[i + 1:]:
             if not _same_room(scene_ctx, a, b):
+                continue
+            if not _labels_semantically_close(a.label, b.label):
                 continue
             dist_xy = _xy_distance(a, b)
             if dist_xy > 1.2:
@@ -489,6 +633,29 @@ def _instantiate_T11(spec, scene_ctx, rng):
 # T17, T18, T19 — post-occlusion behind a known occluder
 # ---------------------------------------------------------------------------
 
+_OCCLUDER_LABELS = (
+    _SEMANTIC_GROUPS["storage"]
+    | _SEMANTIC_GROUPS["tables"]
+    | _SEMANTIC_GROUPS["seating"]
+    | _SEMANTIC_GROUPS["bedroom_large"]
+    | {"shower room partition", "curtain"}
+)
+
+
+def _plausible_occlusion_pair(scene_ctx, occ, tgt) -> bool:
+    if not _same_room(scene_ctx, occ, tgt):
+        return False
+    if not _label_matches(occ.label, _OCCLUDER_LABELS):
+        return False
+    if not _is_meaningful_object(tgt, min_volume=0.01):
+        return False
+    if _label_matches(tgt.label, _SEMANTIC_GROUPS["flat_wall_visual"]):
+        return False
+    if _volume(tgt) > 1.2 * max(_volume(occ), 1e-6):
+        return False
+    return True
+
+
 def _find_occluded_pair(scene_ctx, rng) -> Optional[Tuple[str, str]]:
     """Find (occluder, target) pair where occluder largely occludes target from
     *some* nearby viewpoint."""
@@ -500,6 +667,8 @@ def _find_occluded_pair(scene_ctx, rng) -> Optional[Tuple[str, str]]:
         c_occ = 0.5 * (occ.bmin + occ.bmax)
         for tgt in objs:
             if tgt.id == occ.id:
+                continue
+            if not _plausible_occlusion_pair(scene_ctx, occ, tgt):
                 continue
             c_tgt = 0.5 * (tgt.bmin + tgt.bmax)
             # Place camera on far side of occluder from target → check occlusion
@@ -613,14 +782,14 @@ def _instantiate_T20(spec, scene_ctx, rng):
         room_objs = [o for o in objs if scene_ctx.room_id_for_object(o.id) == room_id]
         if len(room_objs) < 2:
             continue
+        if not _is_meaningful_object(tgt, min_volume=0.02):
+            continue
         distractors = [
             o for o in room_objs
             if o.label != tgt.label
             and o.id != tgt.id
-            and (_labels_semantically_close(tgt.label, o.label) or _shape_similar(tgt, o, max_volume_ratio=3.0))
+            and _labels_semantically_close(tgt.label, o.label)
         ]
-        if not distractors:
-            distractors = [o for o in room_objs if o.label != tgt.label and o.id != tgt.id]
         if not distractors:
             continue
         distractor = rng.choice(distractors)
@@ -659,6 +828,8 @@ def _instantiate_T21(spec, scene_ctx, rng):
         # Try different (a, b, ref) triples
         for i in range(min(len(objs_in_room) - 2, 20)):
             ref = objs_in_room[i]
+            if not _is_reference_landmark(ref):
+                continue
             ref_c = 0.5 * (ref.bmin + ref.bmax)
             remaining = objs_in_room[i + 1:]
             rng.shuffle(remaining)
@@ -667,6 +838,10 @@ def _instantiate_T21(spec, scene_ctx, rng):
                 for b in remaining[j + 1:]:
                     # Avoid degenerate wording like "closer to toiletries: X or toiletries".
                     if a.label == b.label or a.label == ref.label or b.label == ref.label:
+                        continue
+                    if not (_is_meaningful_object(a, min_volume=0.02) and _is_meaningful_object(b, min_volume=0.02)):
+                        continue
+                    if not _valid_comparison_pair(a, b):
                         continue
                     da = float(np.linalg.norm(0.5 * (a.bmin + a.bmax) - ref_c))
                     db = float(np.linalg.norm(0.5 * (b.bmin + b.bmax) - ref_c))
@@ -682,8 +857,8 @@ def _instantiate_T21(spec, scene_ctx, rng):
                         "group_centroid_proxy": ref.id,
                         "gt_answer": closer_label,
                         "choices": [a.label, b.label],
-                        "label": a.label if a.label == b.label else f"{a.label}/{b.label}",
-                        "label_plural": _pluralize(a.label) if a.label == b.label else f"{a.label}/{b.label}",
+                        "label": a.label if a.label == b.label else "object",
+                        "label_plural": _pluralize(a.label) if a.label == b.label else "objects",
                     }
     return None
 
@@ -767,9 +942,14 @@ def _instantiate_T08(spec, scene_ctx, rng):
         rng.shuffle(objs_in_room)
         group = None
         for seed in objs_in_room:
+            seed_groups = _groups_for_label(seed.label)
+            if not seed_groups:
+                continue
             seen_labels: set = set()
             local_group = []
             for obj in sorted(objs_in_room, key=lambda o: _xy_distance(seed, o)):
+                if not (seed_groups & _groups_for_label(obj.label)):
+                    continue
                 if obj.label in seen_labels:
                     continue
                 if local_group and _xy_distance(seed, obj) > 2.8:
@@ -1037,6 +1217,25 @@ def _instantiate_T06(spec, scene_ctx, rng):
 # T26 — Occluded Counting   (≥3 same-label instances + nearby occluder)
 # ---------------------------------------------------------------------------
 
+_T26_OCCLUDER_TO_TARGET_GROUPS = {
+    "tables": {"seating", "small_objects", "plants_decor"},
+    "storage": {"small_objects", "plants_decor", "storage"},
+    "seating": {"small_objects", "plants_decor"},
+    "bedroom_large": {"small_objects", "plants_decor", "tables"},
+}
+
+
+def _plausible_count_relation(occluder, target_label: str) -> bool:
+    occ_groups = _groups_for_label(occluder.label)
+    target_groups = _groups_for_label(target_label)
+    if not occ_groups or not target_groups:
+        return False
+    for occ_group in occ_groups:
+        if target_groups & _T26_OCCLUDER_TO_TARGET_GROUPS.get(occ_group, set()):
+            return True
+    return False
+
+
 @register_instantiator("T26")
 def _instantiate_T26(spec, scene_ctx, rng):
     by_label = defaultdict(list)
@@ -1069,8 +1268,13 @@ def _instantiate_T26(spec, scene_ctx, rng):
         centre = np.mean([_center(o) for o in cluster], axis=0)
         occluder = None
         best_score = float("inf")
+        cluster_room = scene_ctx.room_id_for_object(cluster[0].id)
         for cand in _candidate_objects(scene_ctx):
             if cand.label.lower() == label:
+                continue
+            if cluster_room and scene_ctx.room_id_for_object(cand.id) != cluster_room:
+                continue
+            if not _plausible_count_relation(cand, label):
                 continue
             cdiag = float(np.linalg.norm(cand.bmax - cand.bmin))
             cc = _center(cand)
@@ -1147,6 +1351,17 @@ _T29_BESIDE_OBJECTS = {
     "floor lamp",
 }
 
+_T29_BESIDE_GROUP_PAIRS = {
+    frozenset({"seating", "tables"}),
+    frozenset({"tables", "plants_decor"}),
+    frozenset({"bedroom_large", "tables"}),
+    frozenset({"bedroom_large", "storage"}),
+    frozenset({"storage", "tables"}),
+    frozenset({"seating"}),
+    frozenset({"storage"}),
+    frozenset({"tables"}),
+}
+
 
 def _t29_can_rest_on(top, bottom) -> bool:
     return (
@@ -1157,9 +1372,13 @@ def _t29_can_rest_on(top, bottom) -> bool:
 
 
 def _t29_can_be_beside(a, b) -> bool:
+    ga = _groups_for_label(a.label)
+    gb = _groups_for_label(b.label)
+    group_ok = any(frozenset({x, y}) in _T29_BESIDE_GROUP_PAIRS for x in ga for y in gb)
     return (
         a.label.lower() in _T29_BESIDE_OBJECTS
         and b.label.lower() in _T29_BESIDE_OBJECTS
+        and group_ok
         and _aabb_overlap_xy(a, b) <= 0.05 * min(_aabb_area_xy(a), _aabb_area_xy(b))
     )
 
