@@ -18,11 +18,11 @@ quality caveats.
 - [ ] Verify the console script starts:
       `spatial-room-factory --help`
 - [ ] Run at least one smoke generation against a real or sample scene:
-      `python testbench/smoke_test_template.py --scene <SCENE_DIR> --template T01 --n 1`
+      `python testbench/smoke_test_template.py --scene <SCENE_DIR> --template T04 --n 1`
 - [ ] Run a template sweep on the release sample scene and store the summary:
       `python testbench/sweep_all_templates.py --scene <SCENE_DIR> --n 1 --out out/release_smoke --timeout-per-template 120`
       By default this skips templates excluded from the current release mix
-      (`T13`, `T19`, `T23`, `T24`, `T27`, `T32`). Use
+      (`T01`, `T13`, `T19`, `T23`, `T24`, `T27`, `T32`). Use
       `--include-excluded` only for audits.
 - [ ] Audit generated JSONL files:
       `python testbench/audit_trajectory_reliability.py out/release_smoke`

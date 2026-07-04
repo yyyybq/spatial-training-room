@@ -1,7 +1,7 @@
 # Active APL task analysis
 
 This note describes the template-driven Active APL tasks that are relevant for
-the current training-data release. T13, T19, T23, T24, T27, and T32 are
+the current training-data release. T01, T13, T19, T23, T24, T27, and T32 are
 intentionally excluded from this release.
 
 ## Scoring and trajectory length
@@ -56,6 +56,7 @@ visibility/navigation questions. It is kept only for compatibility with
 
 | ID | Reason |
 | --- | --- |
+| T01 | Excluded by design for this release because category recognition remains too dependent on noisy visual/semantic label ambiguity. |
 | T14 | Requires face/orientation annotations such as `front_normal`. |
 | T15 | Requires label-side/text annotations. |
 | T16 | Requires richer front/back visual annotations. |

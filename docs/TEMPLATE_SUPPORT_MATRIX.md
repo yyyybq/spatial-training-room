@@ -6,7 +6,7 @@ tasks when the scene has the required geometry/metadata.
 
 | Template | Task family | v0.1 status | Notes |
 | --- | --- | --- | --- |
-| T01 | Category recognition | Supported | Weighted lower because category labels can be visually ambiguous. |
+| T01 | Category recognition | Excluded from current release | Dropped from this training-data version because category recognition remains too dependent on noisy visual/semantic label ambiguity. |
 | T04 | True size comparison | Supported | Requires same-room, shape/semantic-near objects with non-trivial but non-extreme volume ratio. |
 | T05 | True distance comparison | Supported | Trajectory-mode evidence can span multiple pair views. |
 | T06 | Clearance assessment | Supported | Requires portal/passage geometry and a movable object. |

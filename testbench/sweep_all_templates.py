@@ -31,7 +31,7 @@ from spatial_training_room.task_generation.apl_tasks.template_active_generator i
     INSTANTIATORS, TemplateActiveGenerator, load_template,
 )
 
-RELEASE_EXCLUDED_TEMPLATES = {"T13", "T19", "T23", "T24", "T27", "T32"}
+RELEASE_EXCLUDED_TEMPLATES = {"T01", "T13", "T19", "T23", "T24", "T27", "T32"}
 
 
 def _write_tasks(out_path: Path | None, tid: str, tasks: list) -> None:

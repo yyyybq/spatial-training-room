@@ -39,3 +39,6 @@ Thumbs.db
 # Generated test/output
 out/
 *.log
+
+# Separate GitHub Pages/site repository checked out inside this workspace
+spatial-training-room-page/
