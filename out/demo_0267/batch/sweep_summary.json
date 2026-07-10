@@ -1,0 +1,12 @@
+[
+  {
+    "template": "T05",
+    "status": "ok",
+    "n_ok": 1,
+    "n_requested": 1,
+    "seconds": 30.39,
+    "error": null,
+    "sample_question": "Is the flowers closer to the dish or to the decorative paint",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  }
+]

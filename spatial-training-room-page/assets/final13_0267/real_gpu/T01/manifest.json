@@ -1,0 +1,89 @@
+{
+  "scene": "/nas/baiqiao/active_spatial/InteriorGS/0267_840790",
+  "jsonl": "out/final13_0267/batch/T01.jsonl",
+  "generated_at": "2026-06-29T12:14:38Z",
+  "width": 384,
+  "height": 384,
+  "max_tasks": 3,
+  "tasks": [
+    {
+      "task_index": 0,
+      "task_id": "T01_active_f1c27c59",
+      "template_id": "T01",
+      "num_frames": 6,
+      "num_actions": 6,
+      "action_descriptions": [
+        "Strafe left 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_000",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 1,
+      "task_id": "T01_active_a3c69fe0",
+      "template_id": "T01",
+      "num_frames": 2,
+      "num_actions": 2,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_001",
+      "frames": [
+        "step_000.png",
+        "step_001.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 2,
+      "task_id": "T01_active_1c349806",
+      "template_id": "T01",
+      "num_frames": 9,
+      "num_actions": 9,
+      "action_descriptions": [
+        "Strafe right 0.5m",
+        "Move forward 0.5m",
+        "Strafe right 0.5m",
+        "Move forward 0.5m",
+        "Turn right 45°",
+        "Strafe right 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_002",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png",
+        "step_008.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    }
+  ]
+}

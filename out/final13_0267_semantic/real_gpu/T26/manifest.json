@@ -1,0 +1,100 @@
+{
+  "scene": "/nas/baiqiao/active_spatial/InteriorGS/0267_840790",
+  "jsonl": "/nas/baiqiao/spatial-training-room/out/final13_0267_semantic/batch/T26.jsonl",
+  "generated_at": "2026-07-02T07:08:55Z",
+  "width": 384,
+  "height": 384,
+  "max_tasks": 3,
+  "tasks": [
+    {
+      "task_index": 0,
+      "task_id": "T26_active_9d9fc144",
+      "template_id": "T26",
+      "num_frames": 3,
+      "num_actions": 3,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_000",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    },
+    {
+      "task_index": 1,
+      "task_id": "T26_active_93822f14",
+      "template_id": "T26",
+      "num_frames": 3,
+      "num_actions": 3,
+      "action_descriptions": [
+        "Strafe right 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_001",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    },
+    {
+      "task_index": 2,
+      "task_id": "T26_active_d19f56a3",
+      "template_id": "T26",
+      "num_frames": 4,
+      "num_actions": 4,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_002",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    }
+  ]
+}

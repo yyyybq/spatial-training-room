@@ -1,0 +1,103 @@
+{
+  "scene": "/nas/baiqiao/active_spatial/InteriorGS/0267_840790",
+  "jsonl": "out/final13_0267/batch/T33.jsonl",
+  "generated_at": "2026-06-29T12:15:52Z",
+  "width": 384,
+  "height": 384,
+  "max_tasks": 3,
+  "tasks": [
+    {
+      "task_index": 0,
+      "task_id": "T33_active_65c77323",
+      "template_id": "T33",
+      "num_frames": 5,
+      "num_actions": 5,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_000",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 1,
+      "task_id": "T33_active_13dc77d3",
+      "template_id": "T33",
+      "num_frames": 14,
+      "num_actions": 14,
+      "action_descriptions": [
+        "Strafe left 0.5m",
+        "Strafe left 0.5m",
+        "Turn left 45°",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_001",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png",
+        "step_008.png",
+        "step_009.png",
+        "step_010.png",
+        "step_011.png",
+        "step_012.png",
+        "step_013.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 2,
+      "task_id": "T33_active_c7c9a965",
+      "template_id": "T33",
+      "num_frames": 5,
+      "num_actions": 5,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_002",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    }
+  ]
+}

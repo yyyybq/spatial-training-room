@@ -1,0 +1,139 @@
+{
+  "scene": "/nas/baiqiao/active_spatial/InteriorGS/0267_840790",
+  "jsonl": "/nas/baiqiao/spatial-training-room/out/final13_0267_semantic/batch/T21.jsonl",
+  "generated_at": "2026-07-02T07:08:48Z",
+  "width": 384,
+  "height": 384,
+  "max_tasks": 3,
+  "tasks": [
+    {
+      "task_index": 0,
+      "task_id": "T21_active_823a4557",
+      "template_id": "T21",
+      "num_frames": 9,
+      "num_actions": 9,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_000",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png",
+        "step_008.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png",
+        "step_008.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    },
+    {
+      "task_index": 1,
+      "task_id": "T21_active_b2600e61",
+      "template_id": "T21",
+      "num_frames": 6,
+      "num_actions": 6,
+      "action_descriptions": [
+        "Strafe left 0.5m",
+        "Move forward 0.5m",
+        "Strafe left 0.5m",
+        "Move forward 0.5m",
+        "Turn left 45°",
+        "Stop"
+      ],
+      "task_dir": "task_001",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    },
+    {
+      "task_index": 2,
+      "task_id": "T21_active_001d5055",
+      "template_id": "T21",
+      "num_frames": 8,
+      "num_actions": 8,
+      "action_descriptions": [
+        "Turn right 45°",
+        "Move forward 0.5m",
+        "Turn left 45°",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_002",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png",
+      "video": "clip.mp4",
+      "video_frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png",
+        "step_005.png",
+        "step_006.png",
+        "step_007.png"
+      ],
+      "video_mode": "all_rendered_step_frames",
+      "video_seconds_per_step": 0.5
+    }
+  ]
+}

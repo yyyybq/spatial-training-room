@@ -1,0 +1,79 @@
+{
+  "scene": "/nas/baiqiao/active_spatial/InteriorGS/0267_840790",
+  "jsonl": "out/final13_0267/batch/T05.jsonl",
+  "generated_at": "2026-06-29T12:14:50Z",
+  "width": 384,
+  "height": 384,
+  "max_tasks": 3,
+  "tasks": [
+    {
+      "task_index": 0,
+      "task_id": "T05_active_3fe42356",
+      "template_id": "T05",
+      "num_frames": 4,
+      "num_actions": 4,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_000",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 1,
+      "task_id": "T05_active_76c5f17a",
+      "template_id": "T05",
+      "num_frames": 3,
+      "num_actions": 3,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_001",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    },
+    {
+      "task_index": 2,
+      "task_id": "T05_active_9ffdb60f",
+      "template_id": "T05",
+      "num_frames": 5,
+      "num_actions": 5,
+      "action_descriptions": [
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Move forward 0.5m",
+        "Stop"
+      ],
+      "task_dir": "task_002",
+      "frames": [
+        "step_000.png",
+        "step_001.png",
+        "step_002.png",
+        "step_003.png",
+        "step_004.png"
+      ],
+      "init_frame": "init.png",
+      "target_frame": "target.png",
+      "topdown_frame": "topdown.png"
+    }
+  ]
+}

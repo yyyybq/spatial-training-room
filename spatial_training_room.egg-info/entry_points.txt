@@ -1,0 +1,2 @@
+[console_scripts]
+spatial-room-factory = spatial_training_room.run_factory:main

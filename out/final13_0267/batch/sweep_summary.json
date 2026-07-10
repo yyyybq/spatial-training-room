@@ -1,0 +1,132 @@
+[
+  {
+    "template": "T01",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 51.249,
+    "error": null,
+    "sample_question": "Is the central object flowers or wall cabinet?",
+    "sample_coverage": "cov=1.00/score=0.77/steps=6"
+  },
+  {
+    "template": "T04",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 15.231,
+    "error": null,
+    "sample_question": "Which object is actually larger: the chandelier or the cabin",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T05",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 23.459,
+    "error": null,
+    "sample_question": "Is the plant closer to the basin cabinet or to the chair?",
+    "sample_coverage": "cov=1.00/score=0.86/steps=4"
+  },
+  {
+    "template": "T06",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 10.19,
+    "error": null,
+    "sample_question": "Can the bedside table pass through the doorway?",
+    "sample_coverage": "cov=1.00/score=0.81/steps=5"
+  },
+  {
+    "template": "T08",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 65.25,
+    "error": null,
+    "sample_question": "Are the trappings, box, wardrobe arranged in a straight line",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T11",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 71.709,
+    "error": null,
+    "sample_question": "Are the visible chairs separate objects or one piece of furn",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T17",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 22.023,
+    "error": null,
+    "sample_question": "Is there a tray beside the ornament that you cannot see from",
+    "sample_coverage": "cov=1.00/score=0.95/steps=2"
+  },
+  {
+    "template": "T18",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 113.746,
+    "error": null,
+    "sample_question": "Can you identify what is hidden behind the box?",
+    "sample_coverage": "cov=1.00/score=0.81/steps=5"
+  },
+  {
+    "template": "T20",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 21.507,
+    "error": null,
+    "sample_question": "Find the nearby object — is it box or clothes hanger?",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T21",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 322.603,
+    "error": null,
+    "sample_question": "Which flowers/couple is nearest to the shoe cabinet?",
+    "sample_coverage": "cov=1.00/score=0.86/steps=4"
+  },
+  {
+    "template": "T26",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 94.875,
+    "error": null,
+    "sample_question": "How many downlights surround the tuyere?",
+    "sample_coverage": "cov=1.00/score=0.77/steps=6"
+  },
+  {
+    "template": "T29",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 18.358,
+    "error": null,
+    "sample_question": "Is the bed touching the stool?",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T33",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": 15.391,
+    "error": null,
+    "sample_question": "Can a person fit through the doorway to the master bedroom?",
+    "sample_coverage": "cov=1.00/score=0.81/steps=5"
+  }
+]

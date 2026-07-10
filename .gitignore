@@ -40,5 +40,4 @@ Thumbs.db
 out/
 *.log
 
-# Separate GitHub Pages/site repository checked out inside this workspace
-spatial-training-room-page/
+# Website assets are tracked in this repository.

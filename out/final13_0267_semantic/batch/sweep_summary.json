@@ -1,0 +1,132 @@
+[
+  {
+    "template": "T01",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "What type is the central object?",
+    "sample_coverage": "cov=1.00/score=0.77/steps=6"
+  },
+  {
+    "template": "T04",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Ignoring distance, which is the bigger object?",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T05",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Which is nearer to the bedside table: the chandelier or the table lamp?",
+    "sample_coverage": "cov=1.00/score=0.70/steps=8"
+  },
+  {
+    "template": "T06",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Can the bedside table pass through the doorway?",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T08",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Do the bed, bedside table, wardrobe form a triangle?",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T11",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Are the visible fruits separate objects or one piece of furniture?",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T17",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Is there a storage basket behind the basin cabinet?",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T18",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "The object hidden by the chair: is it a cabinet or a bookshelf?",
+    "sample_coverage": "cov=1.00/score=0.86/steps=4"
+  },
+  {
+    "template": "T20",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Find the nearby object — is it trappings or flowers?",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T21",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Which object is nearest to the chandelier?",
+    "sample_coverage": "cov=1.00/score=0.66/steps=9"
+  },
+  {
+    "template": "T26",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "How many books are there in total around the bookshelf?",
+    "sample_coverage": "cov=1.00/score=0.90/steps=3"
+  },
+  {
+    "template": "T29",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Is the plant resting on top of the table or placed beside it?",
+    "sample_coverage": "cov=1.00/score=0.74/steps=7"
+  },
+  {
+    "template": "T33",
+    "status": "ok",
+    "n_ok": 3,
+    "n_requested": 3,
+    "seconds": null,
+    "error": null,
+    "sample_question": "Can a large_box fit through the doorway to the living room?",
+    "sample_coverage": "cov=1.00/score=0.66/steps=9"
+  }
+]
